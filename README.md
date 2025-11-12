@@ -1,73 +1,95 @@
-# Welcome to your Lovable project
+# Citas Médicas - Recordatorio
 
-## Project info
+Aplicación fullstack para gestionar citaass médicas y recordatorios a pacientes.
 
-**URL**: https://lovable.dev/projects/c3091b7f-cbd9-4e52-a789-c99e8cb7471d
+## Estructura del proyecto
 
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/c3091b7f-cbd9-4e52-a789-c99e8cb7471d) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```
+backend/    API REST con Express y MySQL
+frontend/   SPA en React + Vite + Tailwind (TypeScript)
 ```
 
-**Edit a file directly in GitHub**
+Ambos paquetes usan Node.js ≥ 18. Cada carpeta contiene su propio `package.json`.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Requisitos previos
 
-**Use GitHub Codespaces**
+- Node.js 18 o superior (recomendado instalar con [nvm-windows](https://github.com/coreybutler/nvm-windows))
+- MySQL 8 (o compatible)
+- Git
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Configuración inicial
 
-## What technologies are used for this project?
+1. **Clonar el repositorio**
 
-This project is built with:
+   ```bash
+   git clone <URL_DEL_REPO>
+   cd citasmedicasrecordatorio
+   ```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+2. **Backend**
 
-## How can I deploy this project?
+   ```bash
+   cd backend
+   cp .env.example .env
+   npm install
+   npm run dev
+   ```
 
-Simply open [Lovable](https://lovable.dev/projects/c3091b7f-cbd9-4e52-a789-c99e8cb7471d) and click on Share -> Publish.
+3. **Frontend**
 
-## Can I connect a custom domain to my Lovable project?
+   ```bash
+   cd frontend
+   cp .env.example .env
+   npm install
+   npm run dev
+   ```
 
-Yes, you can!
+4. Abrir el frontend en `http://localhost:5173` (por defecto Vite) y la API en `http://localhost:3000`.
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Variables de entorno
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+### Backend (`backend/.env`)
+
+```
+PORT=3000
+DB_HOST=localhost
+DB_USER=root
+DB_PASS=
+DB_NAME=citasmédicas
+JWT_SECRET=supersecreto
+PUBLIC_URL=http://localhost:3000
+PUBLIC_URL_FRONT=http://localhost:5173
+```
+
+- `PUBLIC_URL` se usa para generar enlaces públicos de la receta
+- `PUBLIC_URL_FRONT` se usa para redirigir a la vista pública del frontend
+- `WHATSAPP_SESSION_PATH` permite persistir la sesión de `whatsapp-web.js`
+- `TOKEN_API_DOCUMENT_MYDEVS` y `KEY_API_DOCUMENT_MYDEVS` se requieren para consultar la información del DNI en RENIEC mediante el servicio de MyDevs.
+
+### Frontend (`frontend/.env`)
+
+```
+VITE_API_URL=http://localhost:3000/api
+```
+
+## Base de datos
+
+El archivo `backend/database/bd.sql` contiene un esquema inicial. Ejecuta el script en tu instancia de MySQL antes de iniciar la API.
+
+## Scripts disponibles
+
+| Ruta       | Comando        | Descripción                     |
+| ---------- | -------------- | -------------------------------- |
+| `backend`  | `npm run server`  | Ejecuta la API con recarga      |
+|            | `npm start`    | Ejecuta la API en modo producción |
+| `frontend` | `npm run dev`  | Servidor de desarrollo Vite     |
+|            | `npm run build`| Compila la SPA para producción  |
+
+## Preparar para subir a GitHub
+
+- Revisa que `node_modules/` no esté versionado (se ignora mediante `.gitignore`)
+- Completa los archivos `.env` con tus credenciales locales antes de ejecutar
+- Ejecuta `npm run build` en el frontend y pruebas manuales en la API según lo requieras
+- Haz commit de tus cambios y `git push` al repositorio remoto
+
+¡Listo! Tu proyecto quedará organizado para desplegarse o continuar el desarrollo.
