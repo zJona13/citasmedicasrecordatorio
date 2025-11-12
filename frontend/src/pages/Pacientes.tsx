@@ -1,26 +1,38 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Search, UserPlus, Phone, Mail, Calendar } from "lucide-react";
+import { api } from "@/lib/api";
+import { useDebounce } from "@/hooks/use-debounce";
+
+interface Patient {
+  id: number;
+  name: string;
+  dni: string;
+  phone: string;
+  email: string;
+  lastVisit: string;
+  appointments: number;
+  status: string;
+}
 
 export default function Pacientes() {
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 300);
 
-  const patients = [
-    { id: 1, name: "María González", dni: "12345678", phone: "987654321", email: "maria.g@mail.com", lastVisit: "10 Ene 2025", appointments: 5, status: "activo" },
-    { id: 2, name: "Carlos Rojas", dni: "23456789", phone: "987654322", email: "carlos.r@mail.com", lastVisit: "08 Ene 2025", appointments: 3, status: "activo" },
-    { id: 3, name: "Ana Martínez", dni: "34567890", phone: "987654323", email: "ana.m@mail.com", lastVisit: "05 Ene 2025", appointments: 8, status: "activo" },
-    { id: 4, name: "Jorge Silva", dni: "45678901", phone: "987654324", email: "jorge.s@mail.com", lastVisit: "28 Dic 2024", appointments: 2, status: "inactivo" },
-    { id: 5, name: "Lucía Pérez", dni: "56789012", phone: "987654325", email: "lucia.p@mail.com", lastVisit: "12 Ene 2025", appointments: 12, status: "activo" },
-  ];
+  const { data, isLoading } = useQuery({
+    queryKey: ['pacientes', debouncedSearch],
+    queryFn: () => api.get<{ pacientes: Patient[]; stats: { total: number; activos: number; nuevos: number; conCitasPendientes: number } }>(
+      `/pacientes${debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''}`
+    ),
+  });
 
-  const filteredPatients = patients.filter(patient =>
-    patient.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    patient.dni.includes(searchTerm)
-  );
+  const patients = data?.pacientes || [];
+  const stats = data?.stats;
 
   return (
     <div className="space-y-6">
@@ -41,25 +53,25 @@ export default function Pacientes() {
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Total Pacientes</CardDescription>
-            <CardTitle className="text-3xl">1,248</CardTitle>
+            <CardTitle className="text-3xl">{stats?.total?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Activos (30 días)</CardDescription>
-            <CardTitle className="text-3xl text-success">892</CardTitle>
+            <CardTitle className="text-3xl text-success">{stats?.activos?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Nuevos (este mes)</CardDescription>
-            <CardTitle className="text-3xl text-primary">156</CardTitle>
+            <CardTitle className="text-3xl text-primary">{stats?.nuevos?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Con citas pendientes</CardDescription>
-            <CardTitle className="text-3xl text-warning">234</CardTitle>
+            <CardTitle className="text-3xl text-warning">{stats?.conCitasPendientes?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -82,20 +94,32 @@ export default function Pacientes() {
             </div>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Paciente</TableHead>
-                <TableHead>DNI</TableHead>
-                <TableHead>Contacto</TableHead>
-                <TableHead>Última Visita</TableHead>
-                <TableHead>Citas Totales</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredPatients.map((patient) => (
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Cargando pacientes...
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Paciente</TableHead>
+                  <TableHead>DNI</TableHead>
+                  <TableHead>Contacto</TableHead>
+                  <TableHead>Última Visita</TableHead>
+                  <TableHead>Citas Totales</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {patients.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      No se encontraron pacientes
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  patients.map((patient) => (
                 <TableRow key={patient.id}>
                   <TableCell className="font-medium">{patient.name}</TableCell>
                   <TableCell>{patient.dni}</TableCell>
@@ -124,9 +148,11 @@ export default function Pacientes() {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

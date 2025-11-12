@@ -1,8 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Clock, User, Phone, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { api } from "@/lib/api";
 
 interface WaitlistPatient {
   id: string;
@@ -15,38 +17,15 @@ interface WaitlistPatient {
   offerExpiry?: string;
 }
 
-const mockWaitlist: WaitlistPatient[] = [
-  {
-    id: "1",
-    patient: "Carlos Ramos Vega",
-    phone: "987654321",
-    specialty: "Cardiología",
-    priority: 1,
-    waitTime: "5 días",
-    offerActive: true,
-    offerExpiry: "14:30",
-  },
-  {
-    id: "2",
-    patient: "Laura Sánchez Díaz",
-    phone: "987654322",
-    specialty: "Cardiología",
-    priority: 2,
-    waitTime: "4 días",
-    offerActive: false,
-  },
-  {
-    id: "3",
-    patient: "Roberto Flores Quispe",
-    phone: "987654323",
-    specialty: "Traumatología",
-    priority: 1,
-    waitTime: "7 días",
-    offerActive: false,
-  },
-];
-
 export default function ListaEspera() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['lista-espera'],
+    queryFn: () => api.get<{ listaEspera: WaitlistPatient[]; ofertasExpirando: number }>('/lista-espera'),
+  });
+
+  const listaEspera = data?.listaEspera || [];
+  const ofertasExpirando = data?.ofertasExpirando || 0;
+
   return (
     <div className="space-y-6">
       <div>
@@ -56,22 +35,33 @@ export default function ListaEspera() {
         </p>
       </div>
 
-      <Alert>
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>
-          1 oferta activa expira en menos de 15 minutos
-        </AlertDescription>
-      </Alert>
+      {ofertasExpirando > 0 && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {ofertasExpirando} oferta{ofertasExpirando > 1 ? 's' : ''} activa{ofertasExpirando > 1 ? 's' : ''} expira{ofertasExpirando > 1 ? 'n' : ''} en menos de 15 minutos
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Card>
         <CardHeader>
           <CardTitle>Pacientes en Lista de Espera</CardTitle>
           <CardDescription>
-            {mockWaitlist.length} pacientes esperando cupo disponible
+            {listaEspera.length} pacientes esperando cupo disponible
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {mockWaitlist.map((patient) => (
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Cargando lista de espera...
+            </div>
+          ) : listaEspera.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No hay pacientes en lista de espera
+            </div>
+          ) : (
+            listaEspera.map((patient) => (
             <div
               key={patient.id}
               className="flex items-center justify-between p-4 border rounded-lg hover:shadow-md transition-shadow"
@@ -122,7 +112,8 @@ export default function ListaEspera() {
                 )}
               </div>
             </div>
-          ))}
+            ))
+          )}
         </CardContent>
       </Card>
     </div>

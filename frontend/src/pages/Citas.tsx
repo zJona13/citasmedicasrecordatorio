@@ -4,11 +4,13 @@ import { NewAppointmentModal } from "@/components/citas/NewAppointmentModal";
 import { AppointmentDetailsModal } from "@/components/citas/AppointmentDetailsModal";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
+import { Appointment } from "@/lib/api";
 
 export default function Citas() {
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [preselectedDate, setPreselectedDate] = useState<Date | undefined>(undefined);
 
   return (
     <div className="space-y-6">
@@ -16,7 +18,7 @@ export default function Citas() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Gestión de Citas</h1>
           <p className="text-muted-foreground mt-2">
-            Visualiza y administra las citas programadas
+            Hospital Luis Heysen II de Chiclayo
           </p>
         </div>
         <Button onClick={() => setIsNewModalOpen(true)} className="gap-2">
@@ -25,11 +27,26 @@ export default function Citas() {
         </Button>
       </div>
 
-      <AppointmentCalendar />
+      <AppointmentCalendar 
+        onAppointmentClick={(appointment) => {
+          setSelectedAppointment(appointment);
+          setIsDetailsModalOpen(true);
+        }}
+        onDateClick={(date) => {
+          setPreselectedDate(date);
+          setIsNewModalOpen(true);
+        }}
+      />
 
       <NewAppointmentModal 
         open={isNewModalOpen} 
-        onOpenChange={setIsNewModalOpen}
+        onOpenChange={(open) => {
+          setIsNewModalOpen(open);
+          if (!open) {
+            setPreselectedDate(undefined);
+          }
+        }}
+        preselectedDate={preselectedDate}
       />
       
       <AppointmentDetailsModal 

@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -5,15 +7,32 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Search, Send, CheckCircle, XCircle, Clock, RefreshCw } from "lucide-react";
+import { api } from "@/lib/api";
+
+interface Confirmation {
+  id: number;
+  patient: string;
+  date: string;
+  time: string;
+  status: string;
+  response: string;
+  channel: string;
+  sent: string;
+}
 
 export default function Confirmaciones() {
-  const confirmations = [
-    { id: 1, patient: "María González", date: "15 Ene 2025", time: "09:00", status: "entregado", response: "confirmada", channel: "SMS", sent: "13 Ene 2025 09:00" },
-    { id: 2, patient: "Carlos Rojas", date: "15 Ene 2025", time: "10:00", status: "pendiente", response: "-", channel: "App", sent: "13 Ene 2025 10:00" },
-    { id: 3, patient: "Ana Martínez", date: "16 Ene 2025", time: "08:00", status: "entregado", response: "confirmada", channel: "SMS", sent: "14 Ene 2025 08:00" },
-    { id: 4, patient: "Jorge Silva", date: "16 Ene 2025", time: "11:00", status: "fallido", response: "-", channel: "SMS", sent: "14 Ene 2025 11:00" },
-    { id: 5, patient: "Lucía Pérez", date: "17 Ene 2025", time: "14:00", status: "entregado", response: "rechazada", channel: "App", sent: "15 Ene 2025 14:00" },
-  ];
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [channelFilter, setChannelFilter] = useState("all-channels");
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['confirmaciones', statusFilter, channelFilter],
+    queryFn: () => api.get<{ confirmaciones: Confirmation[]; stats: { enviadosHoy: number; confirmadas: number; pendientes: number; fallidos: number } }>(
+      `/confirmaciones?status=${statusFilter}&channel=${channelFilter}`
+    ),
+  });
+
+  const confirmations = data?.confirmaciones || [];
+  const stats = data?.stats;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -52,25 +71,25 @@ export default function Confirmaciones() {
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Enviados hoy</CardDescription>
-            <CardTitle className="text-3xl">128</CardTitle>
+            <CardTitle className="text-3xl">{stats?.enviadosHoy?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Confirmadas</CardDescription>
-            <CardTitle className="text-3xl text-success">94</CardTitle>
+            <CardTitle className="text-3xl text-success">{stats?.confirmadas?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Pendientes</CardDescription>
-            <CardTitle className="text-3xl text-warning">28</CardTitle>
+            <CardTitle className="text-3xl text-warning">{stats?.pendientes?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Fallidos</CardDescription>
-            <CardTitle className="text-3xl text-destructive">6</CardTitle>
+            <CardTitle className="text-3xl text-destructive">{stats?.fallidos?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -94,7 +113,7 @@ export default function Confirmaciones() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Buscar por paciente..." className="pl-10" />
             </div>
-            <Select defaultValue="all">
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue />
               </SelectTrigger>
@@ -105,7 +124,7 @@ export default function Confirmaciones() {
                 <SelectItem value="fallido">Fallido</SelectItem>
               </SelectContent>
             </Select>
-            <Select defaultValue="all-channels">
+            <Select value={channelFilter} onValueChange={setChannelFilter}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue />
               </SelectTrigger>
@@ -117,21 +136,33 @@ export default function Confirmaciones() {
             </Select>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Paciente</TableHead>
-                <TableHead>Fecha de Cita</TableHead>
-                <TableHead>Hora</TableHead>
-                <TableHead>Enviado</TableHead>
-                <TableHead>Canal</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Respuesta</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {confirmations.map((conf) => (
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Cargando confirmaciones...
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Paciente</TableHead>
+                  <TableHead>Fecha de Cita</TableHead>
+                  <TableHead>Hora</TableHead>
+                  <TableHead>Enviado</TableHead>
+                  <TableHead>Canal</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Respuesta</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {confirmations.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                      No se encontraron confirmaciones
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  confirmations.map((conf) => (
                 <TableRow key={conf.id}>
                   <TableCell className="font-medium">{conf.patient}</TableCell>
                   <TableCell>{conf.date}</TableCell>
@@ -150,9 +181,11 @@ export default function Confirmaciones() {
                     )}
                   </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,15 +1,32 @@
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-
-const data = [
-  { especialidad: "Cardiología", confirmadas: 45, pendientes: 12, liberadas: 3, reasignadas: 5 },
-  { especialidad: "Pediatría", confirmadas: 38, pendientes: 8, liberadas: 2, reasignadas: 4 },
-  { especialidad: "Traumatología", confirmadas: 42, pendientes: 15, liberadas: 5, reasignadas: 3 },
-  { especialidad: "Ginecología", confirmadas: 35, pendientes: 10, liberadas: 4, reasignadas: 2 },
-  { especialidad: "Oftalmología", confirmadas: 40, pendientes: 9, liberadas: 2, reasignadas: 4 },
-];
+import { api } from "@/lib/api";
 
 export function OccupationChart() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['dashboard-occupation'],
+    queryFn: () => api.get<Array<{ especialidad: string; confirmadas: number; pendientes: number; liberadas: number; reasignadas: number }>>('/dashboard/charts/occupation'),
+  });
+
+  if (isLoading) {
+    return (
+      <Card className="col-span-full lg:col-span-2">
+        <CardHeader>
+          <CardTitle>Ocupación por Especialidad</CardTitle>
+          <CardDescription>
+            Estado de citas por especialidad médica
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+            Cargando datos...
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="col-span-full lg:col-span-2">
       <CardHeader>
@@ -20,7 +37,7 @@ export function OccupationChart() {
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <BarChart data={data}>
+          <BarChart data={data || []}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis 
               dataKey="especialidad" 

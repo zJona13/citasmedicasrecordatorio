@@ -1,18 +1,38 @@
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Search, UserPlus, Calendar, Clock } from "lucide-react";
+import { api } from "@/lib/api";
+import { useDebounce } from "@/hooks/use-debounce";
+
+interface Professional {
+  id: number;
+  name: string;
+  specialty: string;
+  cmp: string;
+  consultorio: string;
+  schedule: string;
+  appointments: number;
+  status: string;
+}
 
 export default function Profesionales() {
-  const professionals = [
-    { id: 1, name: "Dr. Juan Gómez García", specialty: "Cardiología", cmp: "12345", consultorio: "201-A", schedule: "Lun-Vie 8:00-14:00", appointments: 32, status: "disponible" },
-    { id: 2, name: "Dra. María López Martínez", specialty: "Pediatría", cmp: "23456", consultorio: "105-B", schedule: "Lun-Vie 9:00-15:00", appointments: 28, status: "disponible" },
-    { id: 3, name: "Dr. Carlos Silva Romero", specialty: "Traumatología", cmp: "34567", consultorio: "302-C", schedule: "Lun-Mie-Vie 8:00-13:00", appointments: 24, status: "ocupado" },
-    { id: 4, name: "Dra. Ana Rodríguez Pérez", specialty: "Neurología", cmp: "45678", consultorio: "401-D", schedule: "Mar-Jue 14:00-18:00", appointments: 18, status: "disponible" },
-    { id: 5, name: "Dr. Luis Fernández Torres", specialty: "Oftalmología", cmp: "56789", consultorio: "150-E", schedule: "Lun-Vie 8:00-12:00", appointments: 26, status: "disponible" },
-  ];
+  const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearch = useDebounce(searchTerm, 300);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['profesionales', debouncedSearch],
+    queryFn: () => api.get<{ profesionales: Professional[]; stats: { total: number; disponibles: number; especialidades: number; consultoriosActivos: number } }>(
+      `/profesionales${debouncedSearch ? `?search=${encodeURIComponent(debouncedSearch)}` : ''}`
+    ),
+  });
+
+  const professionals = data?.profesionales || [];
+  const stats = data?.stats;
 
   return (
     <div className="space-y-6">
@@ -33,25 +53,25 @@ export default function Profesionales() {
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Total Profesionales</CardDescription>
-            <CardTitle className="text-3xl">48</CardTitle>
+            <CardTitle className="text-3xl">{stats?.total?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Disponibles hoy</CardDescription>
-            <CardTitle className="text-3xl text-success">32</CardTitle>
+            <CardTitle className="text-3xl text-success">{stats?.disponibles?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Especialidades</CardDescription>
-            <CardTitle className="text-3xl text-primary">12</CardTitle>
+            <CardTitle className="text-3xl text-primary">{stats?.especialidades?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardDescription>Consultorios Activos</CardDescription>
-            <CardTitle className="text-3xl text-warning">28</CardTitle>
+            <CardTitle className="text-3xl text-warning">{stats?.consultoriosActivos?.toLocaleString() || "0"}</CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -65,25 +85,42 @@ export default function Profesionales() {
           <div className="mb-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Buscar por nombre o especialidad..." className="pl-10" />
+              <Input 
+                placeholder="Buscar por nombre o especialidad..." 
+                className="pl-10"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
           </div>
 
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Profesional</TableHead>
-                <TableHead>Especialidad</TableHead>
-                <TableHead>CMP</TableHead>
-                <TableHead>Consultorio</TableHead>
-                <TableHead>Horario</TableHead>
-                <TableHead>Citas/Semana</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {professionals.map((prof) => (
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Cargando profesionales...
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Profesional</TableHead>
+                  <TableHead>Especialidad</TableHead>
+                  <TableHead>CMP</TableHead>
+                  <TableHead>Consultorio</TableHead>
+                  <TableHead>Horario</TableHead>
+                  <TableHead>Citas/Semana</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {professionals.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                      No se encontraron profesionales
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  professionals.map((prof) => (
                 <TableRow key={prof.id}>
                   <TableCell className="font-medium">{prof.name}</TableCell>
                   <TableCell>
@@ -109,9 +146,11 @@ export default function Profesionales() {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </div>

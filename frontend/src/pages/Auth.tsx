@@ -1,30 +1,41 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Stethoscope } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simular login
-    setTimeout(() => {
-      window.location.href = "/";
-    }, 1000);
-  };
 
-  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsLoading(true);
-    // Simular registro
-    setTimeout(() => {
-      window.location.href = "/";
-    }, 1000);
+    try {
+      await login(email, password);
+      toast({
+        title: "Sesión iniciada",
+        description: "Bienvenido al sistema",
+      });
+      navigate("/");
+    } catch (error) {
+      toast({
+        title: "Error al iniciar sesión",
+        description: error instanceof Error ? error.message : "Credenciales inválidas",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -40,71 +51,37 @@ export default function Auth() {
           <CardDescription>Sistema de Gestión de Citas Inteligente</CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Iniciar Sesión</TabsTrigger>
-              <TabsTrigger value="signup">Registrarse</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="login">
-              <form onSubmit={handleLogin} className="space-y-4 pt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email">Correo electrónico</Label>
-                  <Input 
-                    id="login-email" 
-                    type="email" 
-                    placeholder="usuario@essalud.gob.pe"
-                    required 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password">Contraseña</Label>
-                  <Input 
-                    id="login-password" 
-                    type="password"
-                    required 
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Iniciando sesión..." : "Iniciar Sesión"}
-                </Button>
-              </form>
-            </TabsContent>
-            
-            <TabsContent value="signup">
-              <form onSubmit={handleSignup} className="space-y-4 pt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-name">Nombre completo</Label>
-                  <Input 
-                    id="signup-name" 
-                    type="text"
-                    placeholder="Juan Pérez"
-                    required 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">Correo electrónico</Label>
-                  <Input 
-                    id="signup-email" 
-                    type="email"
-                    placeholder="usuario@essalud.gob.pe"
-                    required 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Contraseña</Label>
-                  <Input 
-                    id="signup-password" 
-                    type="password"
-                    required 
-                  />
-                </div>
-                <Button type="submit" className="w-full" disabled={isLoading}>
-                  {isLoading ? "Registrando..." : "Crear Cuenta"}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="login-email">Correo electrónico</Label>
+              <Input 
+                id="login-email" 
+                type="email" 
+                placeholder="usuario@essalud.gob.pe"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required 
+                disabled={isLoading}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-password">Contraseña</Label>
+              <Input 
+                id="login-password" 
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required 
+                disabled={isLoading}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Iniciando sesión..." : "Iniciar Sesión"}
+            </Button>
+            <p className="text-xs text-center text-muted-foreground mt-4">
+              El registro de usuarios solo puede ser realizado por administradores
+            </p>
+          </form>
         </CardContent>
       </Card>
     </div>

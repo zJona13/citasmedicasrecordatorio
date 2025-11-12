@@ -1,17 +1,32 @@
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
-
-const data = [
-  { dia: "Lun", confirmaciones: 65, noShows: 8 },
-  { dia: "Mar", confirmaciones: 72, noShows: 5 },
-  { dia: "Mié", confirmaciones: 68, noShows: 7 },
-  { dia: "Jue", confirmaciones: 75, noShows: 4 },
-  { dia: "Vie", confirmaciones: 70, noShows: 6 },
-  { dia: "Sáb", confirmaciones: 45, noShows: 3 },
-  { dia: "Dom", confirmaciones: 30, noShows: 2 },
-];
+import { api } from "@/lib/api";
 
 export function TrendChart() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['dashboard-trend'],
+    queryFn: () => api.get<Array<{ dia: string; confirmaciones: number; noShows: number }>>('/dashboard/charts/trend'),
+  });
+
+  if (isLoading) {
+    return (
+      <Card className="col-span-full lg:col-span-2">
+        <CardHeader>
+          <CardTitle>Tendencia Semanal</CardTitle>
+          <CardDescription>
+            Confirmaciones y ausencias (no-shows) por día
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+            Cargando datos...
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="col-span-full lg:col-span-2">
       <CardHeader>
@@ -22,7 +37,7 @@ export function TrendChart() {
       </CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={data}>
+          <LineChart data={data || []}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
             <XAxis 
               dataKey="dia" 

@@ -3,35 +3,42 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Calendar, Clock, User, Stethoscope, Phone, Mail, MapPin, MessageSquare, Smartphone } from "lucide-react";
+import { Appointment } from "@/lib/api";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 interface AppointmentDetailsModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  appointment?: {
-    patient: string;
-    dni: string;
-    specialty: string;
-    doctor: string;
-    date: string;
-    time: string;
-    status: string;
-    channel: string;
-    phone?: string;
-    email?: string;
-  };
+  appointment?: Appointment | null;
 }
 
 export function AppointmentDetailsModal({ open, onOpenChange, appointment }: AppointmentDetailsModalProps) {
   if (!appointment) return null;
 
-  const getStatusVariant = (status: string) => {
+  const getStatusLabel = (status: Appointment['status']) => {
     switch (status) {
-      case "confirmada": return "default";
-      case "pendiente": return "secondary";
-      case "ofrecida": return "outline";
+      case "confirmed": return "Confirmada";
+      case "pending": return "Pendiente";
+      case "offered": return "Ofrecida";
+      case "released": return "Liberada";
+      default: return "Pendiente";
+    }
+  };
+
+  const getStatusVariant = (status: Appointment['status']) => {
+    switch (status) {
+      case "confirmed": return "default";
+      case "pending": return "secondary";
+      case "offered": return "outline";
+      case "released": return "secondary";
       default: return "secondary";
     }
   };
+
+  const formattedDate = appointment.fecha 
+    ? format(new Date(appointment.fecha), "EEEE, d 'de' MMMM yyyy", { locale: es })
+    : "N/A";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -50,7 +57,7 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
               <p className="text-sm text-muted-foreground">DNI: {appointment.dni}</p>
             </div>
             <Badge variant={getStatusVariant(appointment.status)}>
-              {appointment.status}
+              {getStatusLabel(appointment.status)}
             </Badge>
           </div>
 
@@ -62,7 +69,7 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
                 <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div>
                   <p className="text-sm font-medium">Fecha</p>
-                  <p className="text-sm text-muted-foreground">{appointment.date}</p>
+                  <p className="text-sm text-muted-foreground">{formattedDate}</p>
                 </div>
               </div>
               
@@ -128,7 +135,7 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
                 <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div>
                   <p className="text-sm font-medium">Sede</p>
-                  <p className="text-sm text-muted-foreground">Hospital Nacional Rebagliati</p>
+                  <p className="text-sm text-muted-foreground">Hospital Luis Heysen II de Chiclayo</p>
                 </div>
               </div>
             </div>

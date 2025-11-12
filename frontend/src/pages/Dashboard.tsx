@@ -6,11 +6,44 @@ import {
   Users,
   TrendingUp
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { OccupationChart } from "@/components/dashboard/OccupationChart";
 import { TrendChart } from "@/components/dashboard/TrendChart";
+import { api } from "@/lib/api";
 
 export default function Dashboard() {
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['dashboard-stats'],
+    queryFn: () => api.get<{
+      citasTotalesHoy: number;
+      confirmadas: number;
+      pendientes: number;
+      noShows: number;
+      consultoriosActivos: number;
+      pacientesMes: number;
+      tasaConfirmacion: string;
+      enListaEspera: number;
+      ofertasActivas: number;
+    }>('/dashboard/stats'),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground mt-2">
+            Resumen general del sistema de gestión de citas
+          </p>
+        </div>
+        <div className="text-center py-8 text-muted-foreground">
+          Cargando estadísticas...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -24,55 +57,50 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <KPICard
           title="Citas Totales Hoy"
-          value="156"
+          value={stats?.citasTotalesHoy?.toString() || "0"}
           icon={Calendar}
           variant="info"
-          description="32 consultorios activos"
+          description={`${stats?.consultoriosActivos || 0} consultorios activos`}
         />
         <KPICard
           title="Confirmadas"
-          value="124"
+          value={stats?.confirmadas?.toString() || "0"}
           icon={CheckCircle2}
           variant="success"
-          trend={{ value: 12, isPositive: true }}
         />
         <KPICard
           title="Pendientes"
-          value="28"
+          value={stats?.pendientes?.toString() || "0"}
           icon={Clock}
           variant="warning"
-          trend={{ value: 5, isPositive: false }}
         />
         <KPICard
           title="No-Shows"
-          value="4"
+          value={stats?.noShows?.toString() || "0"}
           icon={XCircle}
           variant="destructive"
-          trend={{ value: 2, isPositive: true }}
         />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <KPICard
           title="Pacientes Atendidos (Mes)"
-          value="2,847"
+          value={stats?.pacientesMes?.toLocaleString() || "0"}
           icon={Users}
           variant="default"
-          trend={{ value: 8, isPositive: true }}
         />
         <KPICard
           title="Tasa de Confirmación"
-          value="89.2%"
+          value={stats?.tasaConfirmacion || "0%"}
           icon={TrendingUp}
           variant="success"
-          trend={{ value: 3, isPositive: true }}
         />
         <KPICard
           title="En Lista de Espera"
-          value="47"
+          value={stats?.enListaEspera?.toString() || "0"}
           icon={Clock}
           variant="warning"
-          description="15 ofertas activas"
+          description={`${stats?.ofertasActivas || 0} ofertas activas`}
         />
       </div>
 
