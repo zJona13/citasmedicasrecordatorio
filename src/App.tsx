@@ -9,6 +9,13 @@ import { TopBar } from "@/components/layout/TopBar";
 import Dashboard from "./pages/Dashboard";
 import Citas from "./pages/Citas";
 import ListaEspera from "./pages/ListaEspera";
+import Confirmaciones from "./pages/Confirmaciones";
+import Pacientes from "./pages/Pacientes";
+import Profesionales from "./pages/Profesionales";
+import Reportes from "./pages/Reportes";
+import Automatizaciones from "./pages/Automatizaciones";
+import Configuracion from "./pages/Configuracion";
+import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,12 +36,13 @@ const App = () => (
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/citas" element={<Citas />} />
                   <Route path="/lista-espera" element={<ListaEspera />} />
-                  <Route path="/confirmaciones" element={<Dashboard />} />
-                  <Route path="/pacientes" element={<Dashboard />} />
-                  <Route path="/profesionales" element={<Dashboard />} />
-                  <Route path="/reportes" element={<Dashboard />} />
-                  <Route path="/automatizaciones" element={<Dashboard />} />
-                  <Route path="/configuracion" element={<Dashboard />} />
+                  <Route path="/confirmaciones" element={<Confirmaciones />} />
+                  <Route path="/pacientes" element={<Pacientes />} />
+                  <Route path="/profesionales" element={<Profesionales />} />
+                  <Route path="/reportes" element={<Reportes />} />
+                  <Route path="/automatizaciones" element={<Automatizaciones />} />
+                  <Route path="/configuracion" element={<Configuracion />} />
+                  <Route path="/auth" element={<Auth />} />
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />
                 </Routes>
