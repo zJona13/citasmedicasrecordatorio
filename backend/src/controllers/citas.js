@@ -1,4 +1,5 @@
 import { pool } from '../db.js';
+import { verificarHorarioCita } from '../utils/horarios.js';
 
 // GET /api/citas
 export const getCitas = async (req, res) => {
@@ -19,7 +20,10 @@ export const getCitas = async (req, res) => {
         c.estado as status,
         c.fecha,
         c.hora,
-        c.notas
+        c.notas,
+        c.es_excepcional,
+        c.razon_excepcional,
+        c.razon_adicional
       FROM citas c
       INNER JOIN pacientes pa ON c.paciente_id = pa.id
       INNER JOIN profesionales pr ON c.profesional_id = pr.id
@@ -100,6 +104,9 @@ export const getCitas = async (req, res) => {
         fecha: cita.fecha,
         hora: cita.hora,
         notas: cita.notas,
+        es_excepcional: cita.es_excepcional || false,
+        razon_excepcional: cita.razon_excepcional,
+        razon_adicional: cita.razon_adicional,
       };
     }));
 
@@ -113,7 +120,7 @@ export const getCitas = async (req, res) => {
 // POST /api/citas
 export const createCita = async (req, res) => {
   try {
-    const { dni, nombre_completo, telefono, email, profesional_id, fecha, hora, notas } = req.body;
+    const { dni, nombre_completo, telefono, email, profesional_id, fecha, hora, notas, es_excepcional, razon_excepcional, razon_adicional } = req.body;
     
     // Validaciones básicas
     if (!dni || !nombre_completo || !profesional_id || !fecha || !hora) {
@@ -122,7 +129,7 @@ export const createCita = async (req, res) => {
     
     // Validar que el profesional existe y está disponible
     const [profesionalRows] = await pool.execute(
-      `SELECT id, estado FROM profesionales WHERE id = ?`,
+      `SELECT id, estado, horario FROM profesionales WHERE id = ?`,
       [profesional_id]
     );
     
@@ -132,6 +139,26 @@ export const createCita = async (req, res) => {
     
     if (profesionalRows[0].estado !== 'disponible') {
       return res.status(400).json({ error: 'El profesional no está disponible' });
+    }
+    
+    // Validar horario de la cita
+    const horarioProfesional = profesionalRows[0].horario;
+    const validacionHorario = verificarHorarioCita(fecha, hora, horarioProfesional);
+    
+    // Si la cita está fuera del horario, se requiere marcar como excepcional
+    if (!validacionHorario.dentroHorario) {
+      if (!es_excepcional || !razon_excepcional) {
+        const diaCapitalizado = validacionHorario.dia ? validacionHorario.dia.charAt(0).toUpperCase() + validacionHorario.dia.slice(1) : 'ese día';
+        const mensajeHorario = validacionHorario.horarioDia 
+          ? `${diaCapitalizado}: ${validacionHorario.horarioDia.inicio}-${validacionHorario.horarioDia.fin}`
+          : `${diaCapitalizado} no tiene horario configurado`;
+        
+        return res.status(400).json({ 
+          error: `La cita está fuera del horario del profesional (${mensajeHorario}). Debe marcar esta cita como excepcional y proporcionar una razón.`,
+          fueraHorario: true,
+          horarioProfesional: validacionHorario
+        });
+      }
     }
     
     // Buscar o crear paciente
@@ -194,9 +221,18 @@ export const createCita = async (req, res) => {
     
     // Crear la cita
     const [result] = await pool.execute(
-      `INSERT INTO citas (paciente_id, profesional_id, fecha, hora, estado, notas) 
-       VALUES (?, ?, ?, ?, 'pendiente', ?)`,
-      [pacienteId, profesional_id, fecha, hora, notas || null]
+      `INSERT INTO citas (paciente_id, profesional_id, fecha, hora, estado, notas, es_excepcional, razon_excepcional, razon_adicional) 
+       VALUES (?, ?, ?, ?, 'pendiente', ?, ?, ?, ?)`,
+      [
+        pacienteId, 
+        profesional_id, 
+        fecha, 
+        hora, 
+        notas || null,
+        es_excepcional || false,
+        razon_excepcional || null,
+        razon_adicional || null
+      ]
     );
     
     // Obtener la cita creada con toda su información
@@ -213,7 +249,10 @@ export const createCita = async (req, res) => {
         c.estado as status,
         c.fecha,
         c.hora,
-        c.notas
+        c.notas,
+        c.es_excepcional,
+        c.razon_excepcional,
+        c.razon_adicional
       FROM citas c
       INNER JOIN pacientes pa ON c.paciente_id = pa.id
       INNER JOIN profesionales pr ON c.profesional_id = pr.id
@@ -239,6 +278,9 @@ export const createCita = async (req, res) => {
       fecha: cita.fecha,
       hora: cita.hora,
       notas: cita.notas,
+      es_excepcional: cita.es_excepcional || false,
+      razon_excepcional: cita.razon_excepcional,
+      razon_adicional: cita.razon_adicional,
     });
   } catch (error) {
     console.error('Error creating cita:', error);

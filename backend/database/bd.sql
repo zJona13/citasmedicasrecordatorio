@@ -59,7 +59,7 @@ CREATE TABLE profesionales (
     cmp VARCHAR(20) NOT NULL UNIQUE COMMENT 'Colegio Médico del Perú',
     especialidad_id INT NOT NULL,
     consultorio VARCHAR(50),
-    horario TEXT COMMENT 'Ej: Lun-Vie 8:00-14:00',
+    horario JSON COMMENT 'Estructura: {"lunes": {"inicio": "08:00", "fin": "13:00"}, "martes": {"inicio": "13:00", "fin": "17:00"}, ...}',
     estado ENUM('disponible', 'ocupado', 'inactivo') DEFAULT 'disponible',
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -103,6 +103,9 @@ CREATE TABLE citas (
     hora TIME NOT NULL,
     estado ENUM('pendiente', 'confirmada', 'cancelada', 'completada', 'no_show') DEFAULT 'pendiente',
     notas TEXT,
+    es_excepcional BOOLEAN DEFAULT FALSE COMMENT 'Indica si la cita está fuera del horario del profesional',
+    razon_excepcional ENUM('emergencia', 'caso_especial', 'extension_horario', 'otro') NULL COMMENT 'Razón por la cual la cita está fuera del horario',
+    razon_adicional TEXT NULL COMMENT 'Razón adicional o detalle de la excepción',
     fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     fecha_actualizacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (paciente_id) REFERENCES pacientes(id) ON DELETE RESTRICT,
@@ -180,4 +183,3 @@ INSERT INTO especialidades (nombre, descripcion, activo) VALUES
 -- =====================================================
 -- Fin del script
 -- =====================================================
-

@@ -8,7 +8,8 @@ import {
   BarChart3, 
   Settings,
   Bell,
-  Clock
+  Clock,
+  BookOpen
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -31,6 +32,7 @@ const menuItems = [
   { title: "Confirmaciones", url: "/confirmaciones", icon: Bell },
   { title: "Pacientes", url: "/pacientes", icon: Users },
   { title: "Profesionales", url: "/profesionales", icon: Stethoscope },
+  { title: "Especialidades", url: "/especialidades", icon: BookOpen },
   { title: "Reportes", url: "/reportes", icon: BarChart3 },
   { title: "Automatizaciones", url: "/automatizaciones", icon: Clock },
   { title: "Configuración", url: "/configuracion", icon: Settings },

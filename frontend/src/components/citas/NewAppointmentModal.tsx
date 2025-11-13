@@ -7,22 +7,32 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Loader2, Search } from "lucide-react";
+import { CalendarIcon, Loader2, Search, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { api, appointmentsApi, CreateAppointmentData, reniecApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useDebounce } from "@/hooks/use-debounce";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface Professional {
   id: number;
   name: string;
+  especialidad_id?: number;
   specialty: string;
   cmp: string;
   consultorio: string;
-  schedule: string;
+  schedule: string | object | null;
   status: string;
+}
+
+interface Especialidad {
+  id: number;
+  nombre: string;
+  activo: boolean;
 }
 
 interface NewAppointmentModalProps {
@@ -50,12 +60,17 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
   const [nombreCompleto, setNombreCompleto] = useState("");
   const [telefono, setTelefono] = useState("");
   const [email, setEmail] = useState("");
-  const [selectedSpecialty, setSelectedSpecialty] = useState<string>("");
+  const [selectedSpecialtyId, setSelectedSpecialtyId] = useState<string>("");
   const [profesionalId, setProfesionalId] = useState<string>("");
   const [date, setDate] = useState<Date | undefined>(preselectedDate);
   const [time, setTime] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [isReniecLoading, setIsReniecLoading] = useState(false);
+  const [esExcepcional, setEsExcepcional] = useState(false);
+  const [razonExcepcional, setRazonExcepcional] = useState<string>("");
+  const [razonAdicional, setRazonAdicional] = useState("");
+  const [fueraHorario, setFueraHorario] = useState(false);
+  const [horarioInfo, setHorarioInfo] = useState<{ dia: string; horarioDia: { inicio: string; fin: string } | null } | null>(null);
 
   // Debounce DNI para consultar RENIEC
   const debouncedDni = useDebounce(dni, 800);
@@ -72,11 +87,16 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
       setNombreCompleto("");
       setTelefono("");
       setEmail("");
-      setSelectedSpecialty("");
+      setSelectedSpecialtyId("");
       setProfesionalId("");
       setDate(preselectedDate);
       setTime("");
       setNotes("");
+      setEsExcepcional(false);
+      setRazonExcepcional("");
+      setRazonAdicional("");
+      setFueraHorario(false);
+      setHorarioInfo(null);
     }
   }, [open, preselectedDate]);
 
@@ -120,6 +140,15 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
     }
   }, [reniecError, debouncedDni, toast]);
 
+  // Fetch especialidades activas
+  const { data: especialidadesData, isLoading: isLoadingEspecialidades } = useQuery({
+    queryKey: ['especialidades'],
+    queryFn: () => api.get<{ especialidades: Especialidad[] }>('/especialidades?activo=true'),
+    enabled: open,
+  });
+
+  const especialidades = especialidadesData?.especialidades || [];
+
   // Fetch profesionales
   const { data: profesionalesData, isLoading: isLoadingProfesionales } = useQuery({
     queryKey: ['profesionales'],
@@ -129,13 +158,76 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
 
   const profesionales = profesionalesData?.profesionales || [];
 
-  // Filtrar profesionales por especialidad seleccionada
-  const filteredProfesionales = selectedSpecialty
-    ? profesionales.filter(p => p.specialty.toLowerCase() === selectedSpecialty.toLowerCase())
-    : profesionales;
+  // Filtrar profesionales por especialidad_id seleccionada
+  const filteredProfesionales = selectedSpecialtyId
+    ? profesionales.filter(p => p.especialidad_id?.toString() === selectedSpecialtyId && p.status === 'disponible')
+    : profesionales.filter(p => p.status === 'disponible');
 
-  // Obtener lista única de especialidades
-  const especialidades = Array.from(new Set(profesionales.map(p => p.specialty))).sort();
+  // Obtener profesional seleccionado
+  const profesionalSeleccionado = profesionales.find(p => p.id.toString() === profesionalId);
+
+  // Función para validar horario
+  const validarHorario = () => {
+    if (!profesionalSeleccionado || !date || !time) {
+      setFueraHorario(false);
+      setHorarioInfo(null);
+      return;
+    }
+
+    const horario = profesionalSeleccionado.schedule;
+    if (!horario) {
+      // Si no hay horario configurado, considerar dentro del horario
+      setFueraHorario(false);
+      setHorarioInfo(null);
+      return;
+    }
+
+    // Parsear horario
+    let horarioObj: Record<string, { inicio: string; fin: string }> = {};
+    try {
+      horarioObj = typeof horario === 'string' ? JSON.parse(horario) : horario;
+    } catch (e) {
+      // Si no se puede parsear, considerar dentro del horario
+      setFueraHorario(false);
+      setHorarioInfo(null);
+      return;
+    }
+
+    // Obtener día de la semana
+    const fechaObj = new Date(date);
+    const diaNumero = fechaObj.getDay();
+    const diasSemana = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+    const dia = diasSemana[diaNumero];
+
+    // Verificar si el día tiene horario configurado
+    if (!horarioObj[dia]) {
+      setFueraHorario(true);
+      setHorarioInfo({ dia, horarioDia: null });
+      return;
+    }
+
+    const horarioDia = horarioObj[dia];
+    
+    // Convertir horas a minutos para comparar
+    const [horaH, horaM] = time.split(':').map(Number);
+    const [inicioH, inicioM] = horarioDia.inicio.split(':').map(Number);
+    const [finH, finM] = horarioDia.fin.split(':').map(Number);
+    
+    const minutosHora = horaH * 60 + horaM;
+    const minutosInicio = inicioH * 60 + inicioM;
+    const minutosFin = finH * 60 + finM;
+
+    const dentroHorario = minutosHora >= minutosInicio && minutosHora <= minutosFin;
+    
+    setFueraHorario(!dentroHorario);
+    setHorarioInfo({ dia, horarioDia: dentroHorario ? null : horarioDia });
+  };
+
+  // Validar horario cuando cambian profesional, fecha o hora
+  useEffect(() => {
+    validarHorario();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profesionalId, date, time, profesionalSeleccionado]);
 
   // Mutation para crear cita
   const createMutation = useMutation({
@@ -169,6 +261,16 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
       return;
     }
 
+    // Si está fuera del horario, validar que se haya marcado como excepcional
+    if (fueraHorario && (!esExcepcional || !razonExcepcional)) {
+      toast({
+        title: "Cita fuera del horario",
+        description: "Debe marcar esta cita como excepcional y proporcionar una razón.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const profesionalIdNum = parseInt(profesionalId);
     if (isNaN(profesionalIdNum)) {
       toast({
@@ -190,6 +292,9 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
       fecha: fechaFormatted,
       hora: time,
       notas: notes || undefined,
+      es_excepcional: fueraHorario ? esExcepcional : undefined,
+      razon_excepcional: fueraHorario && esExcepcional ? razonExcepcional as 'emergencia' | 'caso_especial' | 'extension_horario' | 'otro' : undefined,
+      razon_adicional: fueraHorario && esExcepcional ? razonAdicional || undefined : undefined,
     });
   };
 
@@ -282,22 +387,33 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
             <div className="space-y-2">
               <Label htmlFor="specialty">Especialidad *</Label>
               <Select 
-                value={selectedSpecialty} 
+                value={selectedSpecialtyId} 
                 onValueChange={(value) => {
-                  setSelectedSpecialty(value);
+                  setSelectedSpecialtyId(value);
                   setProfesionalId(""); // Reset profesional when specialty changes
                 }}
                 required
+                disabled={isLoadingEspecialidades}
               >
                 <SelectTrigger id="specialty">
-                  <SelectValue placeholder="Seleccionar especialidad" />
+                  <SelectValue placeholder={isLoadingEspecialidades ? "Cargando..." : "Seleccionar especialidad"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {especialidades.map((esp) => (
-                    <SelectItem key={esp} value={esp}>
-                      {esp}
+                  {isLoadingEspecialidades ? (
+                    <SelectItem value="loading" disabled>
+                      Cargando especialidades...
                     </SelectItem>
-                  ))}
+                  ) : especialidades.length === 0 ? (
+                    <SelectItem value="none" disabled>
+                      No hay especialidades disponibles
+                    </SelectItem>
+                  ) : (
+                    especialidades.map((esp) => (
+                      <SelectItem key={esp.id} value={esp.id.toString()}>
+                        {esp.nombre}
+                      </SelectItem>
+                    ))
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -307,28 +423,36 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
                 value={profesionalId} 
                 onValueChange={setProfesionalId}
                 required
-                disabled={!selectedSpecialty || isLoadingProfesionales}
+                disabled={!selectedSpecialtyId || isLoadingProfesionales || filteredProfesionales.length === 0}
               >
                 <SelectTrigger id="doctor">
-                  <SelectValue placeholder={selectedSpecialty ? "Seleccionar médico" : "Primero seleccione especialidad"} />
+                  <SelectValue 
+                    placeholder={
+                      !selectedSpecialtyId 
+                        ? "Primero seleccione especialidad" 
+                        : isLoadingProfesionales 
+                        ? "Cargando..." 
+                        : filteredProfesionales.length === 0
+                        ? "No hay profesionales disponibles"
+                        : "Seleccionar médico"
+                    } 
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {isLoadingProfesionales ? (
                     <SelectItem value="loading" disabled>
-                      Cargando...
+                      Cargando profesionales...
                     </SelectItem>
                   ) : filteredProfesionales.length === 0 ? (
                     <SelectItem value="none" disabled>
-                      No hay profesionales disponibles
+                      {selectedSpecialtyId ? "No hay profesionales disponibles para esta especialidad" : "Seleccione una especialidad primero"}
                     </SelectItem>
                   ) : (
-                    filteredProfesionales
-                      .filter(p => p.status === 'disponible')
-                      .map((prof) => (
-                        <SelectItem key={prof.id} value={prof.id.toString()}>
-                          {prof.name} - {prof.specialty}
-                        </SelectItem>
-                      ))
+                    filteredProfesionales.map((prof) => (
+                      <SelectItem key={prof.id} value={prof.id.toString()}>
+                        {prof.name} {prof.consultorio ? `- ${prof.consultorio}` : ''}
+                      </SelectItem>
+                    ))
                   )}
                 </SelectContent>
               </Select>
@@ -379,6 +503,70 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
               </Select>
             </div>
           </div>
+
+          {fueraHorario && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Advertencia: Cita fuera del horario</AlertTitle>
+              <AlertDescription>
+                Esta cita está fuera del horario del profesional.
+                {horarioInfo?.horarioDia 
+                  ? ` El horario de ${horarioInfo.dia.charAt(0).toUpperCase() + horarioInfo.dia.slice(1)} es ${horarioInfo.horarioDia.inicio}-${horarioInfo.horarioDia.fin}.`
+                  : ` El ${horarioInfo?.dia ? horarioInfo.dia.charAt(0).toUpperCase() + horarioInfo.dia.slice(1) : 'día seleccionado'} no tiene horario configurado.`
+                }
+                Debe marcar esta cita como excepcional y proporcionar una razón.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {fueraHorario && (
+            <div className="space-y-4 border rounded-lg p-4 bg-muted/50">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="es-excepcional"
+                  checked={esExcepcional}
+                  onCheckedChange={(checked) => setEsExcepcional(checked === true)}
+                />
+                <Label htmlFor="es-excepcional" className="cursor-pointer">
+                  Esta cita está fuera del horario del médico
+                </Label>
+              </div>
+
+              {esExcepcional && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="razon-excepcional">Razón de la excepción *</Label>
+                    <Select 
+                      value={razonExcepcional} 
+                      onValueChange={setRazonExcepcional}
+                      required={esExcepcional}
+                    >
+                      <SelectTrigger id="razon-excepcional">
+                        <SelectValue placeholder="Seleccione una razón" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="emergencia">Emergencia</SelectItem>
+                        <SelectItem value="caso_especial">Caso especial autorizado</SelectItem>
+                        <SelectItem value="extension_horario">Extensión de horario</SelectItem>
+                        <SelectItem value="otro">Otro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="razon-adicional">Razón adicional (opcional)</Label>
+                    <Textarea
+                      id="razon-adicional"
+                      placeholder="Detalle adicional sobre la razón de la excepción..."
+                      value={razonAdicional}
+                      onChange={(e) => setRazonAdicional(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="notes">Notas adicionales</Label>

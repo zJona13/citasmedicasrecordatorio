@@ -1,6 +1,11 @@
 import express from 'express';
 import { authenticateToken } from '../auth.js';
-import { getProfesionales } from '../controllers/profesionales.js';
+import { 
+  getProfesionales, 
+  createProfesional, 
+  updateProfesional, 
+  deleteProfesional 
+} from '../controllers/profesionales.js';
 
 const router = express.Router();
 
@@ -8,6 +13,9 @@ const router = express.Router();
 router.use(authenticateToken);
 
 router.get('/', getProfesionales);
+router.post('/', createProfesional);
+router.put('/:id', updateProfesional);
+router.delete('/:id', deleteProfesional);
 
 export default router;
 

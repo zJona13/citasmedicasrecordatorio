@@ -13,6 +13,7 @@ import ListaEspera from "./pages/ListaEspera";
 import Confirmaciones from "./pages/Confirmaciones";
 import Pacientes from "./pages/Pacientes";
 import Profesionales from "./pages/Profesionales";
+import Especialidades from "./pages/Especialidades";
 import Reportes from "./pages/Reportes";
 import Automatizaciones from "./pages/Automatizaciones";
 import Configuracion from "./pages/Configuracion";
@@ -46,6 +47,7 @@ const App = () => (
                           <Route path="/confirmaciones" element={<Confirmaciones />} />
                           <Route path="/pacientes" element={<Pacientes />} />
                           <Route path="/profesionales" element={<Profesionales />} />
+                          <Route path="/especialidades" element={<Especialidades />} />
                           <Route path="/reportes" element={<Reportes />} />
                           <Route path="/automatizaciones" element={<Automatizaciones />} />
                           <Route path="/configuracion" element={<Configuracion />} />

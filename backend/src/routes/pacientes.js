@@ -1,6 +1,11 @@
 import express from 'express';
 import { authenticateToken } from '../auth.js';
-import { getPacientes } from '../controllers/pacientes.js';
+import { 
+  getPacientes, 
+  createPaciente, 
+  updatePaciente, 
+  deletePaciente 
+} from '../controllers/pacientes.js';
 
 const router = express.Router();
 
@@ -8,6 +13,9 @@ const router = express.Router();
 router.use(authenticateToken);
 
 router.get('/', getPacientes);
+router.post('/', createPaciente);
+router.put('/:id', updatePaciente);
+router.delete('/:id', deletePaciente);
 
 export default router;
 

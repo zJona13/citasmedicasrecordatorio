@@ -94,6 +94,9 @@ export interface CreateAppointmentData {
   fecha: string;
   hora: string;
   notas?: string;
+  es_excepcional?: boolean;
+  razon_excepcional?: 'emergencia' | 'caso_especial' | 'extension_horario' | 'otro';
+  razon_adicional?: string;
 }
 
 export const appointmentsApi = {
