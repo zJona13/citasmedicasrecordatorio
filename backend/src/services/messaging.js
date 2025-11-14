@@ -1,0 +1,425 @@
+/**
+ * Servicio de mensajería para SMS y WhatsApp usando Twilio
+ */
+import twilio from 'twilio';
+import { pool } from '../db.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const DEMO_MODE = process.env.TWILIO_DEMO_MODE === 'true' || !process.env.TWILIO_ACCOUNT_SID;
+
+let twilioClient = null;
+
+if (!DEMO_MODE) {
+  twilioClient = twilio(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_AUTH_TOKEN
+  );
+}
+
+const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER;
+const TWILIO_WHATSAPP = process.env.TWILIO_WHATSAPP_NUMBER;
+
+/**
+ * Envía un SMS
+ * @param {string} to - Número de teléfono destino (formato: +1234567890)
+ * @param {string} message - Mensaje a enviar
+ * @returns {Promise<Object>}
+ */
+export async function enviarSMS(to, message) {
+  if (DEMO_MODE) {
+    console.log('[DEMO MODE] SMS no enviado:', { to, message });
+    return {
+      success: true,
+      sid: 'demo_sid',
+      mode: 'demo'
+    };
+  }
+
+  try {
+    const result = await twilioClient.messages.create({
+      body: message,
+      from: TWILIO_PHONE,
+      to: to
+    });
+
+    console.log('SMS enviado:', result.sid);
+    return {
+      success: true,
+      sid: result.sid,
+      mode: 'production'
+    };
+  } catch (error) {
+    console.error('Error enviando SMS:', error);
+    throw error;
+  }
+}
+
+/**
+ * Envía un mensaje de WhatsApp
+ * @param {string} to - Número de teléfono destino (formato: +1234567890)
+ * @param {string} message - Mensaje a enviar
+ * @returns {Promise<Object>}
+ */
+export async function enviarWhatsApp(to, message) {
+  // Si WhatsApp no está configurado, lanzar error
+  if (!TWILIO_WHATSAPP) {
+    throw new Error('WhatsApp no está configurado. Configure TWILIO_WHATSAPP_NUMBER en las variables de entorno.');
+  }
+
+  if (DEMO_MODE) {
+    console.log('[DEMO MODE] WhatsApp no enviado:', { to, message });
+    return {
+      success: true,
+      sid: 'demo_sid',
+      mode: 'demo'
+    };
+  }
+
+  try {
+    const result = await twilioClient.messages.create({
+      body: message,
+      from: TWILIO_WHATSAPP,
+      to: `whatsapp:${to}`
+    });
+
+    console.log('WhatsApp enviado:', result.sid);
+    return {
+      success: true,
+      sid: result.sid,
+      mode: 'production'
+    };
+  } catch (error) {
+    console.error('Error enviando WhatsApp:', error);
+    throw error;
+  }
+}
+
+/**
+ * Envía mensaje por el canal preferido
+ * @param {string} to - Número de teléfono destino
+ * @param {string} message - Mensaje a enviar
+ * @param {string} canal - 'SMS' o 'WhatsApp'
+ * @returns {Promise<Object>}
+ */
+export async function enviarMensaje(to, message, canal = 'SMS') {
+  // Si se solicita WhatsApp pero no está configurado, usar SMS como fallback
+  if (canal === 'WhatsApp' && !TWILIO_WHATSAPP) {
+    console.warn('WhatsApp no configurado, usando SMS como fallback');
+    canal = 'SMS';
+  }
+  
+  if (canal === 'WhatsApp') {
+    return await enviarWhatsApp(to, message);
+  }
+  return await enviarSMS(to, message);
+}
+
+/**
+ * Formatea número de teléfono para Twilio
+ * @param {string} telefono - Número de teléfono
+ * @returns {string} Número formateado
+ */
+export function formatearTelefono(telefono) {
+  // Remover espacios y caracteres especiales
+  let numero = telefono.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+  
+  // Si no empieza con +, agregar código de país de Perú (+51)
+  if (!numero.startsWith('+')) {
+    // Si empieza con 0, removerlo
+    if (numero.startsWith('0')) {
+      numero = numero.substring(1);
+    }
+    // Agregar código de país
+    numero = '+51' + numero;
+  }
+  
+  return numero;
+}
+
+/**
+ * Template: Recordatorio 24h antes de la cita
+ */
+export function templateRecordatorio24h(cita) {
+  const fecha = new Date(cita.fecha).toLocaleDateString('es-PE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+  
+  return `Recordatorio: Cita el ${fecha} a las ${cita.hora.substring(0, 5)} con ${cita.doctor}. Confirme su asistencia.`;
+}
+
+/**
+ * Template: Confirmación 3h antes de la cita
+ */
+export function templateConfirmacion3h(cita) {
+  const fecha = new Date(cita.fecha).toLocaleDateString('es-PE', {
+    day: '2-digit',
+    month: '2-digit'
+  });
+  
+  return `Confirme su cita: ${fecha} ${cita.hora.substring(0, 5)} con ${cita.doctor}. Responda CONFIRMAR o CANCELAR.`;
+}
+
+/**
+ * Template: Confirmación manual de cita
+ */
+export function templateConfirmacionManual(cita) {
+  const fecha = new Date(cita.fecha).toLocaleDateString('es-PE', {
+    day: '2-digit',
+    month: '2-digit'
+  });
+  
+  return `Cita confirmada: ${fecha} ${cita.hora.substring(0, 5)} con ${cita.doctor}. Llegue 10 min antes. Hospital Luis Heysen II.`;
+}
+
+/**
+ * Template: Notificación de espacio disponible en lista de espera
+ */
+export function templateOfertaListaEspera(cita, minutosExpiracion = 15) {
+  const fecha = new Date(cita.fecha).toLocaleDateString('es-PE', {
+    day: '2-digit',
+    month: '2-digit'
+  });
+  
+  // Acortar nombre del doctor si es muy largo
+  const doctorNombre = cita.doctor.length > 25 
+    ? cita.doctor.split(' ').slice(0, 2).join(' ') 
+    : cita.doctor;
+  
+  return `Espacio disponible: ${fecha} ${cita.hora.substring(0, 5)} con ${doctorNombre}. Responda ACEPTAR en ${minutosExpiracion} min o IGNORAR.`;
+}
+
+/**
+ * Envía recordatorio 24h antes de la cita
+ * @param {Object} cita - Objeto con información de la cita
+ * @param {string} canal - 'SMS' o 'WhatsApp'
+ * @returns {Promise<Object>}
+ */
+export async function enviarRecordatorio24h(cita, canal = 'SMS') {
+  if (!cita.telefono) {
+    console.warn('No se puede enviar recordatorio: paciente sin teléfono');
+    return { success: false, error: 'Sin teléfono' };
+  }
+
+  const mensaje = templateRecordatorio24h(cita);
+  const telefono = formatearTelefono(cita.telefono);
+
+  try {
+    const resultado = await enviarMensaje(telefono, mensaje, canal);
+
+    // Registrar en confirmaciones
+    await pool.execute(
+      `INSERT INTO confirmaciones (cita_id, canal, fecha_envio, estado_envio, respuesta) 
+       VALUES (?, ?, NOW(), 'entregado', 'pendiente')`,
+      [cita.id, canal]
+    );
+
+    return resultado;
+  } catch (error) {
+    console.error('Error enviando recordatorio 24h:', error);
+    
+    // Registrar fallo
+    try {
+      await pool.execute(
+        `INSERT INTO confirmaciones (cita_id, canal, fecha_envio, estado_envio, respuesta) 
+         VALUES (?, ?, NOW(), 'fallido', 'pendiente')`,
+        [cita.id, canal]
+      );
+    } catch (dbError) {
+      console.error('Error registrando fallo:', dbError);
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Envía confirmación 3h antes de la cita
+ * @param {Object} cita - Objeto con información de la cita
+ * @param {string} canal - 'SMS' o 'WhatsApp'
+ * @returns {Promise<Object>}
+ */
+export async function enviarConfirmacion3h(cita, canal = 'SMS') {
+  if (!cita.telefono) {
+    console.warn('No se puede enviar confirmación: paciente sin teléfono');
+    return { success: false, error: 'Sin teléfono' };
+  }
+
+  const mensaje = templateConfirmacion3h(cita);
+  const telefono = formatearTelefono(cita.telefono);
+
+  try {
+    const resultado = await enviarMensaje(telefono, mensaje, canal);
+
+    // Registrar en confirmaciones
+    await pool.execute(
+      `INSERT INTO confirmaciones (cita_id, canal, fecha_envio, estado_envio, respuesta) 
+       VALUES (?, ?, NOW(), 'entregado', 'pendiente')`,
+      [cita.id, canal]
+    );
+
+    return resultado;
+  } catch (error) {
+    console.error('Error enviando confirmación 3h:', error);
+    
+    // Registrar fallo
+    try {
+      await pool.execute(
+        `INSERT INTO confirmaciones (cita_id, canal, fecha_envio, estado_envio, respuesta) 
+         VALUES (?, ?, NOW(), 'fallido', 'pendiente')`,
+        [cita.id, canal]
+      );
+    } catch (dbError) {
+      console.error('Error registrando fallo:', dbError);
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Envía confirmación manual de cita (cuando se confirma desde el panel)
+ * @param {Object} cita - Objeto con información de la cita
+ * @param {string} canal - 'SMS' o 'WhatsApp'
+ * @returns {Promise<Object>}
+ */
+export async function enviarConfirmacionManual(cita, canal = 'SMS') {
+  if (!cita.telefono) {
+    console.warn('No se puede enviar confirmación manual: paciente sin teléfono');
+    return { success: false, error: 'Sin teléfono' };
+  }
+
+  const mensaje = templateConfirmacionManual(cita);
+  const telefono = formatearTelefono(cita.telefono);
+
+  try {
+    const resultado = await enviarMensaje(telefono, mensaje, canal);
+
+    // Registrar en confirmaciones como confirmada
+    await pool.execute(
+      `INSERT INTO confirmaciones (cita_id, canal, fecha_envio, estado_envio, respuesta) 
+       VALUES (?, ?, NOW(), 'entregado', 'confirmada')`,
+      [cita.id, canal]
+    );
+
+    return resultado;
+  } catch (error) {
+    console.error('Error enviando confirmación manual:', error);
+    
+    // Registrar fallo
+    try {
+      await pool.execute(
+        `INSERT INTO confirmaciones (cita_id, canal, fecha_envio, estado_envio, respuesta) 
+         VALUES (?, ?, NOW(), 'fallido', 'pendiente')`,
+        [cita.id, canal]
+      );
+    } catch (dbError) {
+      console.error('Error registrando fallo:', dbError);
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Envía notificación de espacio disponible en lista de espera
+ * @param {Object} cita - Objeto con información de la cita propuesta
+ * @param {Object} paciente - Objeto con información del paciente
+ * @param {string} canal - 'SMS' o 'WhatsApp'
+ * @param {number} minutosExpiracion - Minutos hasta que expire la oferta
+ * @returns {Promise<Object>}
+ */
+export async function enviarOfertaListaEspera(cita, paciente, canal = 'SMS', minutosExpiracion = 15) {
+  if (!paciente.telefono) {
+    console.warn('No se puede enviar oferta: paciente sin teléfono');
+    return { success: false, error: 'Sin teléfono' };
+  }
+
+  const mensaje = templateOfertaListaEspera(cita, minutosExpiracion);
+  const telefono = formatearTelefono(paciente.telefono);
+
+  try {
+    const resultado = await enviarMensaje(telefono, mensaje, canal);
+    return resultado;
+  } catch (error) {
+    console.error('Error enviando oferta de lista de espera:', error);
+    throw error;
+  }
+}
+
+/**
+ * Procesa respuesta de confirmación desde SMS/WhatsApp
+ * @param {string} telefono - Número de teléfono que respondió
+ * @param {string} mensaje - Mensaje recibido
+ * @returns {Promise<Object>}
+ */
+export async function procesarRespuestaConfirmacion(telefono, mensaje) {
+  const mensajeNormalizado = mensaje.trim().toUpperCase();
+  
+  // Limpiar número de teléfono (remover caracteres especiales y prefijos)
+  const telefonoLimpio = telefono.replace(/\D/g, '');
+  // Si tiene código de país, removerlo para búsqueda
+  const telefonoBusqueda = telefonoLimpio.length > 9 ? telefonoLimpio.slice(-9) : telefonoLimpio;
+  
+  // Buscar cita pendiente de confirmación para este teléfono
+  const [citas] = await pool.execute(
+    `SELECT c.id, c.estado, c.fecha, c.hora, 
+            pa.nombre_completo, pr.nombre_completo as doctor, e.nombre as specialty
+     FROM citas c
+     INNER JOIN pacientes pa ON c.paciente_id = pa.id
+     INNER JOIN profesionales pr ON c.profesional_id = pr.id
+     INNER JOIN especialidades e ON pr.especialidad_id = e.id
+     WHERE REPLACE(REPLACE(pa.telefono, ' ', ''), '-', '') LIKE ? 
+     AND c.estado = 'pendiente'
+     AND c.fecha >= CURDATE()
+     ORDER BY c.fecha ASC, c.hora ASC
+     LIMIT 1`,
+    [`%${telefonoBusqueda}%`]
+  );
+
+  if (citas.length === 0) {
+    return { success: false, error: 'No se encontró cita pendiente' };
+  }
+
+  const cita = citas[0];
+  let respuesta = 'pendiente';
+  let estadoCita = cita.estado;
+
+  if (mensajeNormalizado.includes('CONFIRMAR') || mensajeNormalizado.includes('SI') || mensajeNormalizado === 'S') {
+    respuesta = 'confirmada';
+    estadoCita = 'confirmada';
+  } else if (mensajeNormalizado.includes('CANCELAR') || mensajeNormalizado.includes('NO') || mensajeNormalizado === 'N') {
+    respuesta = 'rechazada';
+    estadoCita = 'cancelada';
+  } else {
+    return { success: false, error: 'Respuesta no reconocida. Responda CONFIRMAR o CANCELAR.' };
+  }
+
+  // Actualizar cita y confirmación
+  await pool.execute(
+    `UPDATE citas SET estado = ? WHERE id = ?`,
+    [estadoCita, cita.id]
+  );
+
+  await pool.execute(
+    `UPDATE confirmaciones 
+     SET respuesta = ?, fecha_respuesta = NOW() 
+     WHERE cita_id = ? 
+     AND respuesta = 'pendiente'
+     ORDER BY fecha_envio DESC LIMIT 1`,
+    [respuesta, cita.id]
+  );
+
+  return {
+    success: true,
+    cita: {
+      id: cita.id,
+      estado: estadoCita,
+      respuesta
+    }
+  };
+}
+

@@ -230,7 +230,7 @@ export const deleteEspecialidad = async (req, res) => {
     
     // Validar que no esté en uso por lista de espera
     const [listaEspera] = await pool.execute(
-      `SELECT COUNT(*) as count FROM lista_espera WHERE especialidad_id = ?`,
+      `SELECT COUNT(*) as count FROM lista_espera WHERE especialidad_id = ? AND fecha_asignacion IS NULL`,
       [id]
     );
     

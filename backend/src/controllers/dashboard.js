@@ -57,7 +57,7 @@ export const getDashboardStats = async (req, res) => {
 
     // En lista de espera
     const [listaEspera] = await pool.execute(
-      `SELECT COUNT(*) as total FROM lista_espera WHERE oferta_activa = FALSE`
+      `SELECT COUNT(*) as total FROM lista_espera WHERE oferta_activa = FALSE AND fecha_asignacion IS NULL`
     );
     const [ofertasActivas] = await pool.execute(
       `SELECT COUNT(*) as total FROM lista_espera WHERE oferta_activa = TRUE`

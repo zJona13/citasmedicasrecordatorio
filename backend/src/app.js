@@ -10,6 +10,9 @@ import citasRoutes from './routes/citas.js';
 import listaEsperaRoutes from './routes/listaEspera.js';
 import confirmacionesRoutes from './routes/confirmaciones.js';
 import reniecRoutes from './routes/reniec.js';
+import chatbotRoutes from './routes/chatbot.js';
+import webhookRoutes from './routes/webhooks.js';
+import { iniciarJobsNotificaciones } from './services/notifications.js';
 
 dotenv.config();
 
@@ -36,6 +39,8 @@ app.use('/api/citas', citasRoutes);
 app.use('/api/lista-espera', listaEsperaRoutes);
 app.use('/api/confirmaciones', confirmacionesRoutes);
 app.use('/api/reniec', reniecRoutes);
+app.use('/api/chatbot', chatbotRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -52,6 +57,8 @@ app.use((req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  // Iniciar jobs de notificaciones
+  iniciarJobsNotificaciones();
 });
 
 export default app;

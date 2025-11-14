@@ -2,18 +2,16 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon, Loader2, Search, AlertTriangle } from "lucide-react";
+import { CalendarIcon, Loader2, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { api, appointmentsApi, CreateAppointmentData, reniecApi } from "@/lib/api";
+import { api, appointmentsApi, RescheduleAppointmentData, Appointment } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { useDebounce } from "@/hooks/use-debounce";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,10 +33,10 @@ interface Especialidad {
   activo: boolean;
 }
 
-interface NewAppointmentModalProps {
+interface RescheduleAppointmentModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  preselectedDate?: Date;
+  appointment: Appointment | null;
 }
 
 // Generar opciones de horas (0-23)
@@ -62,95 +60,51 @@ const generateMinutes = () => {
 const hours = generateHours();
 const minutes = generateMinutes();
 
-export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: NewAppointmentModalProps) {
+export function RescheduleAppointmentModal({ open, onOpenChange, appointment }: RescheduleAppointmentModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  const [dni, setDni] = useState("");
-  const [nombreCompleto, setNombreCompleto] = useState("");
-  const [telefono, setTelefono] = useState("");
-  const [email, setEmail] = useState("");
   const [selectedSpecialtyId, setSelectedSpecialtyId] = useState<string>("");
   const [profesionalId, setProfesionalId] = useState<string>("");
-  const [date, setDate] = useState<Date | undefined>(preselectedDate);
+  const [date, setDate] = useState<Date | undefined>(undefined);
   const [selectedHour, setSelectedHour] = useState<string>("");
   const [selectedMinute, setSelectedMinute] = useState<string>("");
-  const [notes, setNotes] = useState("");
-  const [isReniecLoading, setIsReniecLoading] = useState(false);
   const [esExcepcional, setEsExcepcional] = useState(false);
   const [razonExcepcional, setRazonExcepcional] = useState<string>("");
   const [razonAdicional, setRazonAdicional] = useState("");
   const [fueraHorario, setFueraHorario] = useState(false);
   const [horarioInfo, setHorarioInfo] = useState<{ dia: string; horarioDia: { inicio: string; fin: string } | null } | null>(null);
 
-  // Debounce DNI para consultar RENIEC
-  const debouncedDni = useDebounce(dni, 800);
-
-  // Reset form when modal opens/closes or preselectedDate changes
+  // Prellenar campos cuando se abre el modal
   useEffect(() => {
-    if (open) {
-      if (preselectedDate) {
-        setDate(preselectedDate);
+    if (open && appointment) {
+      // Convertir fecha string a Date
+      const fechaDate = appointment.fecha ? new Date(appointment.fecha + 'T00:00:00') : undefined;
+      setDate(fechaDate);
+      
+      // Parsear hora (formato HH:MM)
+      if (appointment.time) {
+        const timeParts = appointment.time.split(':');
+        setSelectedHour(timeParts[0] || "");
+        setSelectedMinute(timeParts[1] || "");
+      } else {
+        setSelectedHour("");
+        setSelectedMinute("");
       }
-    } else {
-      // Reset form when closing
-      setDni("");
-      setNombreCompleto("");
-      setTelefono("");
-      setEmail("");
-      setSelectedSpecialtyId("");
-      setProfesionalId("");
-      setDate(preselectedDate);
-      setSelectedHour("");
-      setSelectedMinute("");
-      setNotes("");
+      
+      // Establecer profesional (se establecerá después cuando se carguen los profesionales)
+      if (appointment.profesional_id) {
+        setProfesionalId(appointment.profesional_id.toString());
+      }
+      
+      // Resetear campos de excepción
       setEsExcepcional(false);
       setRazonExcepcional("");
       setRazonAdicional("");
       setFueraHorario(false);
       setHorarioInfo(null);
     }
-  }, [open, preselectedDate]);
-
-  // Consultar RENIEC cuando el DNI tiene 8 dígitos
-  const { data: reniecData, isLoading: isLoadingReniec, error: reniecError } = useQuery({
-    queryKey: ['reniec', debouncedDni],
-    queryFn: () => reniecApi.consultarDNI(debouncedDni),
-    enabled: !!debouncedDni && /^\d{8}$/.test(debouncedDni) && open,
-    retry: false,
-  });
-
-  // Actualizar estado de carga
-  useEffect(() => {
-    setIsReniecLoading(isLoadingReniec);
-  }, [isLoadingReniec]);
-
-  // Manejar respuesta exitosa de RENIEC
-  useEffect(() => {
-    if (reniecData?.success && reniecData.data) {
-      // Autocompletar campos con datos de RENIEC
-      setNombreCompleto(reniecData.data.nombre_completo || "");
-      toast({
-        title: "Datos encontrados",
-        description: "Los datos del paciente se han cargado desde RENIEC.",
-      });
-    }
-  }, [reniecData, toast]);
-
-  // Manejar errores de RENIEC
-  useEffect(() => {
-    if (reniecError && debouncedDni.length === 8) {
-      const errorMessage = reniecError instanceof Error ? reniecError.message : 'Error desconocido';
-      // No mostrar error si es porque el DNI no se encontró (es normal)
-      if (!errorMessage.includes('no encontrado')) {
-        toast({
-          title: "Error al consultar RENIEC",
-          description: errorMessage || "No se pudieron obtener los datos del DNI.",
-          variant: "destructive",
-        });
-      }
-    }
-  }, [reniecError, debouncedDni, toast]);
+  }, [open, appointment]);
 
   // Fetch especialidades activas
   const { data: especialidadesData, isLoading: isLoadingEspecialidades } = useQuery({
@@ -169,6 +123,16 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
   });
 
   const profesionales = profesionalesData?.profesionales || [];
+
+  // Cuando se carga el appointment, buscar su especialidad
+  useEffect(() => {
+    if (appointment && profesionales.length > 0 && especialidades.length > 0) {
+      const profesional = profesionales.find(p => p.id === appointment.profesional_id);
+      if (profesional && profesional.especialidad_id) {
+        setSelectedSpecialtyId(profesional.especialidad_id.toString());
+      }
+    }
+  }, [appointment, profesionales, especialidades]);
 
   // Filtrar profesionales por especialidad_id seleccionada
   const filteredProfesionales = selectedSpecialtyId
@@ -191,30 +155,25 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
 
     const horario = profesionalSeleccionado.schedule;
     if (!horario) {
-      // Si no hay horario configurado, considerar dentro del horario
       setFueraHorario(false);
       setHorarioInfo(null);
       return;
     }
 
-    // Parsear horario
     let horarioObj: Record<string, { inicio: string; fin: string }> = {};
     try {
       horarioObj = typeof horario === 'string' ? JSON.parse(horario) : horario;
     } catch (e) {
-      // Si no se puede parsear, considerar dentro del horario
       setFueraHorario(false);
       setHorarioInfo(null);
       return;
     }
 
-    // Obtener día de la semana
     const fechaObj = new Date(date);
     const diaNumero = fechaObj.getDay();
     const diasSemana = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
     const dia = diasSemana[diaNumero];
 
-    // Verificar si el día tiene horario configurado
     if (!horarioObj[dia]) {
       setFueraHorario(true);
       setHorarioInfo({ dia, horarioDia: null });
@@ -223,7 +182,6 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
 
     const horarioDia = horarioObj[dia];
     
-    // Convertir horas a minutos para comparar
     const [horaH, horaM] = time.split(':').map(Number);
     const [inicioH, inicioM] = horarioDia.inicio.split(':').map(Number);
     const [finH, finM] = horarioDia.fin.split(':').map(Number);
@@ -244,13 +202,13 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profesionalId, date, selectedHour, selectedMinute, profesionalSeleccionado]);
 
-  // Mutation para crear cita
-  const createMutation = useMutation({
-    mutationFn: (data: CreateAppointmentData) => appointmentsApi.create(data),
+  // Mutation para reagendar cita
+  const rescheduleMutation = useMutation({
+    mutationFn: (data: RescheduleAppointmentData) => appointmentsApi.reschedule(appointment!.id, data),
     onSuccess: () => {
       toast({
-        title: "Cita creada",
-        description: "La cita se ha creado exitosamente.",
+        title: "Cita reagendada",
+        description: "La cita se ha reagendado exitosamente.",
       });
       queryClient.invalidateQueries({ queryKey: ['citas'] });
       onOpenChange(false);
@@ -258,7 +216,7 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
     onError: (error: Error) => {
       toast({
         title: "Error",
-        description: error.message || "No se pudo crear la cita.",
+        description: error.message || "No se pudo reagendar la cita.",
         variant: "destructive",
       });
     },
@@ -267,7 +225,9 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!dni || !nombreCompleto || !profesionalId || !date || !selectedHour || !selectedMinute) {
+    if (!appointment) return;
+    
+    if (!profesionalId || !date || !selectedHour || !selectedMinute) {
       toast({
         title: "Campos requeridos",
         description: "Por favor complete todos los campos obligatorios, incluyendo hora y minutos.",
@@ -298,106 +258,41 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
 
     const fechaFormatted = format(date, 'yyyy-MM-dd');
 
-    createMutation.mutate({
-      dni,
-      nombre_completo: nombreCompleto,
-      telefono: telefono || undefined,
-      email: email || undefined,
-      profesional_id: profesionalIdNum,
+    const data: RescheduleAppointmentData = {
       fecha: fechaFormatted,
       hora: time,
-      notas: notes || undefined,
-      es_excepcional: fueraHorario ? esExcepcional : undefined,
-      razon_excepcional: fueraHorario && esExcepcional ? razonExcepcional as 'emergencia' | 'caso_especial' | 'extension_horario' | 'otro' : undefined,
-      razon_adicional: fueraHorario && esExcepcional ? razonAdicional || undefined : undefined,
-    });
+    };
+
+    // Solo incluir profesional_id si es diferente al actual
+    if (profesionalIdNum !== appointment.profesional_id) {
+      data.profesional_id = profesionalIdNum;
+    }
+
+    // Incluir campos de excepción si es necesario
+    if (fueraHorario && esExcepcional) {
+      data.es_excepcional = true;
+      data.razon_excepcional = razonExcepcional as 'emergencia' | 'caso_especial' | 'extension_horario' | 'otro';
+      if (razonAdicional) {
+        data.razon_adicional = razonAdicional;
+      }
+    }
+
+    rescheduleMutation.mutate(data);
   };
+
+  if (!appointment) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nueva Cita</DialogTitle>
+          <DialogTitle>Reagendar Cita</DialogTitle>
           <DialogDescription>
-            Hospital Luis Heysen II de Chiclayo - Complete los datos para crear una nueva cita médica
+            Modifique la fecha, hora o profesional de la cita para {appointment.patient}
           </DialogDescription>
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="dni">DNI del Paciente *</Label>
-              <div className="relative">
-                <Input 
-                  id="dni" 
-                  placeholder="12345678" 
-                  value={dni}
-                  onChange={(e) => {
-                    // Solo permitir números y máximo 8 dígitos
-                    const value = e.target.value.replace(/\D/g, '').slice(0, 8);
-                    setDni(value);
-                  }}
-                  maxLength={8}
-                  required 
-                  className={cn(
-                    isReniecLoading && "pr-10"
-                  )}
-                />
-                {isReniecLoading && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  </div>
-                )}
-                {!isReniecLoading && dni.length === 8 && reniecData?.success && (
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <Search className="h-4 w-4 text-green-600" />
-                  </div>
-                )}
-              </div>
-              {dni.length === 8 && !isReniecLoading && reniecData?.success && (
-                <p className="text-xs text-green-600">✓ Datos encontrados en RENIEC</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="patient-name">Nombre del Paciente *</Label>
-              <Input 
-                id="patient-name" 
-                placeholder="Juan Pérez López" 
-                value={nombreCompleto}
-                onChange={(e) => setNombreCompleto(e.target.value)}
-                required 
-                className={cn(
-                  reniecData?.success && "border-green-300"
-                )}
-              />
-              {reniecData?.success && (
-                <p className="text-xs text-muted-foreground">Datos de RENIEC - Puede editar si es necesario</p>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="telefono">Teléfono</Label>
-              <Input 
-                id="telefono" 
-                placeholder="987654321" 
-                value={telefono}
-                onChange={(e) => setTelefono(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="email">Correo Electrónico</Label>
-              <Input 
-                id="email" 
-                type="email"
-                placeholder="correo@ejemplo.com" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="specialty">Especialidad *</Label>
@@ -603,28 +498,18 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="notes">Notas adicionales</Label>
-            <Input 
-              id="notes" 
-              placeholder="Observaciones o indicaciones especiales" 
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-            />
-          </div>
-
           <DialogFooter>
             <Button 
               type="button" 
               variant="outline" 
               onClick={() => onOpenChange(false)}
-              disabled={createMutation.isPending}
+              disabled={rescheduleMutation.isPending}
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={createMutation.isPending}>
-              {createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Crear Cita
+            <Button type="submit" disabled={rescheduleMutation.isPending}>
+              {rescheduleMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Reagendar Cita
             </Button>
           </DialogFooter>
         </form>
@@ -632,3 +517,4 @@ export function NewAppointmentModal({ open, onOpenChange, preselectedDate }: New
     </Dialog>
   );
 }
+

@@ -18,6 +18,7 @@ import Reportes from "./pages/Reportes";
 import Automatizaciones from "./pages/Automatizaciones";
 import Configuracion from "./pages/Configuracion";
 import Auth from "./pages/Auth";
+import Chatbot from "./pages/Chatbot";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -31,6 +32,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/auth" element={<Auth />} />
+            <Route path="/chatbot" element={<Chatbot />} />
             <Route
               path="/*"
               element={

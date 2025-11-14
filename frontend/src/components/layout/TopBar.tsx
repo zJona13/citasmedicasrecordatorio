@@ -25,9 +25,7 @@ export function TopBar() {
                 <SelectValue placeholder="Seleccionar sede" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="sede1">Hospital Rebagliati</SelectItem>
-                <SelectItem value="sede2">Hospital Almenara</SelectItem>
-                <SelectItem value="sede3">Hospital Sabogal</SelectItem>
+                <SelectItem value="sede1">Hospital Luis Heysen II</SelectItem>
               </SelectContent>
             </Select>
           </div>

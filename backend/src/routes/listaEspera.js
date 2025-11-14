@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateToken } from '../auth.js';
-import { getListaEspera } from '../controllers/listaEspera.js';
+import { getListaEspera, createListaEspera } from '../controllers/listaEspera.js';
 
 const router = express.Router();
 
@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(authenticateToken);
 
 router.get('/', getListaEspera);
+router.post('/', createListaEspera);
 
 export default router;
 
