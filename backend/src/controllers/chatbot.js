@@ -11,13 +11,21 @@ import {
 } from '../services/chatbot.js';
 import { calcularDisponibilidadSemanal } from '../utils/availability.js';
 import { verificarHorarioCita } from '../utils/horarios.js';
+import { obtenerConfiguracion } from '../services/configuraciones.js';
 
-/**
- * POST /api/chatbot/message
- * Procesa un mensaje del usuario en el chatbot
- */
 export const procesarMensajeChatbot = async (req, res) => {
   try {
+    // Verificar si el chatbot está habilitado
+    const chatbotEnabled = await obtenerConfiguracion('chatbot_enabled');
+    if (!chatbotEnabled) {
+      return res.json({
+        mensaje: 'Lo siento, el chatbot está temporalmente deshabilitado. Por favor, contacte con el centro médico directamente.',
+        opciones: [],
+        estado: 'finalizado',
+        finalizado: true
+      });
+    }
+
     const { sessionId, message, dni, nombre, telefono } = req.body;
     
     if (!sessionId || !message) {

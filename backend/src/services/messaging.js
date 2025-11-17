@@ -3,6 +3,7 @@
  */
 import twilio from 'twilio';
 import { pool } from '../db.js';
+import { obtenerConfiguracion } from './configuraciones.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -139,6 +140,40 @@ export function formatearTelefono(telefono) {
 }
 
 /**
+ * Reemplaza variables en una plantilla de mensaje
+ * @param {string} plantilla - Plantilla con variables {nombre}, {fecha}, {hora}, {especialidad}, {tiempo}
+ * @param {Object} datos - Objeto con los datos para reemplazar
+ * @returns {string} Mensaje con variables reemplazadas
+ */
+export function reemplazarVariables(plantilla, datos) {
+  let mensaje = plantilla;
+  
+  // Formatear fecha
+  const fechaFormateada = datos.fecha 
+    ? new Date(datos.fecha).toLocaleDateString('es-PE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      })
+    : '';
+  
+  // Formatear hora
+  const horaFormateada = datos.hora 
+    ? datos.hora.substring(0, 5)
+    : '';
+  
+  // Reemplazar variables
+  mensaje = mensaje.replace(/{nombre}/g, datos.nombre || datos.patient || '');
+  mensaje = mensaje.replace(/{fecha}/g, fechaFormateada);
+  mensaje = mensaje.replace(/{hora}/g, horaFormateada);
+  mensaje = mensaje.replace(/{especialidad}/g, datos.especialidad || datos.specialty || '');
+  mensaje = mensaje.replace(/{doctor}/g, datos.doctor || '');
+  mensaje = mensaje.replace(/{tiempo}/g, datos.tiempo || datos.minutosExpiracion || '30');
+  
+  return mensaje;
+}
+
+/**
  * Template: Recordatorio 24h antes de la cita
  */
 export function templateRecordatorio24h(cita) {
@@ -178,7 +213,26 @@ export function templateConfirmacionManual(cita) {
 /**
  * Template: Notificación de espacio disponible en lista de espera
  */
-export function templateOfertaListaEspera(cita, minutosExpiracion = 15) {
+export async function templateOfertaListaEspera(cita, minutosExpiracion = 15) {
+  // Intentar obtener plantilla personalizada
+  try {
+    const plantillaPersonalizada = await obtenerConfiguracion('mensaje_oferta_cupo');
+    if (plantillaPersonalizada && plantillaPersonalizada !== '') {
+      return reemplazarVariables(plantillaPersonalizada, {
+        nombre: cita.patient || cita.nombre || '',
+        fecha: cita.fecha,
+        hora: cita.hora,
+        especialidad: cita.specialty || cita.especialidad || '',
+        doctor: cita.doctor || '',
+        tiempo: minutosExpiracion.toString(),
+        minutosExpiracion: minutosExpiracion.toString()
+      });
+    }
+  } catch (error) {
+    console.warn('Error obteniendo plantilla personalizada, usando plantilla por defecto:', error);
+  }
+  
+  // Plantilla por defecto
   const fecha = new Date(cita.fecha).toLocaleDateString('es-PE', {
     day: '2-digit',
     month: '2-digit'
@@ -292,7 +346,26 @@ export async function enviarConfirmacionManual(cita, canal = 'SMS') {
     return { success: false, error: 'Sin teléfono' };
   }
 
-  const mensaje = templateConfirmacionManual(cita);
+  // Intentar obtener plantilla personalizada
+  let mensaje;
+  try {
+    const plantillaPersonalizada = await obtenerConfiguracion('mensaje_confirmacion');
+    if (plantillaPersonalizada && plantillaPersonalizada !== '') {
+      mensaje = reemplazarVariables(plantillaPersonalizada, {
+        nombre: cita.patient || cita.nombre || '',
+        fecha: cita.fecha,
+        hora: cita.hora,
+        especialidad: cita.specialty || cita.especialidad || '',
+        doctor: cita.doctor || ''
+      });
+    } else {
+      mensaje = templateConfirmacionManual(cita);
+    }
+  } catch (error) {
+    console.warn('Error obteniendo plantilla personalizada, usando plantilla por defecto:', error);
+    mensaje = templateConfirmacionManual(cita);
+  }
+
   const telefono = formatearTelefono(cita.telefono);
 
   try {
@@ -332,13 +405,25 @@ export async function enviarConfirmacionManual(cita, canal = 'SMS') {
  * @param {number} minutosExpiracion - Minutos hasta que expire la oferta
  * @returns {Promise<Object>}
  */
-export async function enviarOfertaListaEspera(cita, paciente, canal = 'SMS', minutosExpiracion = 15) {
+export async function enviarOfertaListaEspera(cita, paciente, canal = 'SMS', minutosExpiracion = null) {
   if (!paciente.telefono) {
     console.warn('No se puede enviar oferta: paciente sin teléfono');
     return { success: false, error: 'Sin teléfono' };
   }
 
-  const mensaje = templateOfertaListaEspera(cita, minutosExpiracion);
+  // Obtener tiempo máximo de oferta desde configuraciones si no se proporciona
+  if (minutosExpiracion === null) {
+    try {
+      minutosExpiracion = await obtenerConfiguracion('tiempo_max_oferta');
+    } catch (error) {
+      minutosExpiracion = 30; // Valor por defecto
+    }
+  }
+
+  const mensaje = await templateOfertaListaEspera({
+    ...cita,
+    patient: paciente.nombre_completo || paciente.nombre || cita.patient
+  }, minutosExpiracion);
   const telefono = formatearTelefono(paciente.telefono);
 
   try {

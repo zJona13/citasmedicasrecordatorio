@@ -3,6 +3,7 @@
  */
 import { pool } from '../db.js';
 import { enviarOfertaListaEspera } from './messaging.js';
+import { obtenerConfiguracion } from './configuraciones.js';
 
 /**
  * Notifica al siguiente paciente en la lista de espera cuando se libera un espacio
@@ -12,6 +13,13 @@ import { enviarOfertaListaEspera } from './messaging.js';
  */
 export async function notificarListaEspera(profesionalId, fecha, hora) {
   try {
+    // Verificar si la oferta automática está habilitada
+    const autoOfferEnabled = await obtenerConfiguracion('auto_offer_enabled');
+    if (!autoOfferEnabled) {
+      console.log('Oferta automática está deshabilitada en configuraciones');
+      return null;
+    }
+
     // Primero obtener la especialidad del profesional
     const [profesionalInfo] = await pool.execute(
       `SELECT especialidad_id FROM profesionales WHERE id = ?`,
@@ -38,6 +46,34 @@ export async function notificarListaEspera(profesionalId, fecha, hora) {
     );
     console.log(`Total pacientes en lista espera (especialidad ${especialidadId}, sin oferta activa, sin cita asignada): ${verificacion[0].total}`);
 
+    // Obtener configuraciones de prioridad
+    const prioridadAdultosMayores = await obtenerConfiguracion('prioridad_adultos_mayores');
+    const prioridadUrgentes = await obtenerConfiguracion('prioridad_urgentes');
+    const prioridadTiempoEspera = await obtenerConfiguracion('prioridad_tiempo_espera');
+
+    // Construir query de priorización dinámica
+    let orderByClause = `
+      CASE 
+        WHEN le.profesional_id = ? THEN 1
+        WHEN le.profesional_id IS NULL THEN 2
+        ELSE 3
+      END`;
+    
+    // Agregar prioridades según configuración
+    if (prioridadAdultosMayores) {
+      orderByClause += `, CASE WHEN TIMESTAMPDIFF(YEAR, pa.fecha_nacimiento, CURDATE()) >= 65 THEN 1 ELSE 2 END`;
+    }
+    if (prioridadUrgentes) {
+      // Asumimos que los casos urgentes tienen prioridad = 1
+      orderByClause += `, le.prioridad ASC`;
+    }
+    if (prioridadTiempoEspera) {
+      orderByClause += `, le.fecha_registro ASC`;
+    } else {
+      // Si no se prioriza por tiempo, usar prioridad numérica
+      orderByClause += `, le.prioridad ASC, le.fecha_registro ASC`;
+    }
+
     // Buscar pacientes en lista de espera para este profesional o especialidad
     // Prioridad: 1) Pacientes que esperan específicamente a este profesional
     //            2) Pacientes que esperan cualquier profesional de esta especialidad (profesional_id IS NULL)
@@ -45,7 +81,7 @@ export async function notificarListaEspera(profesionalId, fecha, hora) {
     // Excluir pacientes que ya tienen fecha_asignacion (ya tienen cita asignada)
     const [listaEspera] = await pool.execute(
       `SELECT le.id, le.paciente_id, le.especialidad_id, le.profesional_id, le.canal_preferido,
-              pa.nombre_completo, pa.telefono, pa.dni,
+              pa.nombre_completo, pa.telefono, pa.dni, pa.fecha_nacimiento,
               pr.nombre_completo as profesional_nombre,
               e.nombre as especialidad_nombre
        FROM lista_espera le
@@ -57,14 +93,7 @@ export async function notificarListaEspera(profesionalId, fecha, hora) {
        AND le.fecha_asignacion IS NULL
        AND pa.telefono IS NOT NULL
        AND TRIM(pa.telefono) != ''
-       ORDER BY 
-         CASE 
-           WHEN le.profesional_id = ? THEN 1
-           WHEN le.profesional_id IS NULL THEN 2
-           ELSE 3
-         END,
-         le.prioridad ASC, 
-         le.fecha_registro ASC
+       ORDER BY ${orderByClause}
        LIMIT 1`,
       [especialidadId, profesionalId]
     );
@@ -166,10 +195,13 @@ export async function notificarListaEspera(profesionalId, fecha, hora) {
       specialty: profesional.especialidad
     };
 
-    // Marcar oferta como activa y establecer expiración (15 minutos)
+    // Obtener tiempo máximo de oferta desde configuraciones
+    const tiempoMaxOferta = await obtenerConfiguracion('tiempo_max_oferta');
+    
+    // Marcar oferta como activa y establecer expiración
     // Guardar información de la cita ofrecida para poder crearla después
     const fechaExpiracion = new Date();
-    fechaExpiracion.setMinutes(fechaExpiracion.getMinutes() + 15);
+    fechaExpiracion.setMinutes(fechaExpiracion.getMinutes() + tiempoMaxOferta);
 
     await pool.execute(
       `UPDATE lista_espera 
@@ -184,7 +216,7 @@ export async function notificarListaEspera(profesionalId, fecha, hora) {
 
     // Enviar notificación
     const canal = paciente.canal_preferido || 'SMS';
-    await enviarOfertaListaEspera(cita, paciente, canal, 15);
+    await enviarOfertaListaEspera(cita, paciente, canal, tiempoMaxOferta);
 
     console.log(`Notificación enviada a paciente ${paciente.nombre_completo} (${paciente.telefono})`);
 

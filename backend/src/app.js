@@ -12,6 +12,10 @@ import confirmacionesRoutes from './routes/confirmaciones.js';
 import reniecRoutes from './routes/reniec.js';
 import chatbotRoutes from './routes/chatbot.js';
 import webhookRoutes from './routes/webhooks.js';
+import reportesRoutes from './routes/reportes.js';
+import configuracionesRoutes from './routes/configuraciones.js';
+import sedesRoutes from './routes/sedes.js';
+import notificacionesRoutes from './routes/notificaciones.js';
 import { iniciarJobsNotificaciones } from './services/notifications.js';
 
 dotenv.config();
@@ -41,6 +45,10 @@ app.use('/api/confirmaciones', confirmacionesRoutes);
 app.use('/api/reniec', reniecRoutes);
 app.use('/api/chatbot', chatbotRoutes);
 app.use('/api/webhooks', webhookRoutes);
+app.use('/api/reportes', reportesRoutes);
+app.use('/api/configuraciones', configuracionesRoutes);
+app.use('/api/sedes', sedesRoutes);
+app.use('/api/notificaciones', notificacionesRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

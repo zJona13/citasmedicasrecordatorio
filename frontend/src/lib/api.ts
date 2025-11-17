@@ -92,7 +92,7 @@ export interface Appointment {
   doctor: string;
   profesional_id?: number;
   specialty: string;
-  status: 'confirmed' | 'pending' | 'released' | 'offered';
+  status: 'confirmed' | 'pending' | 'released' | 'offered' | 'no_show';
   channel: 'SMS' | 'App' | 'Email';
   fecha: string;
   hora: string;
@@ -133,6 +133,11 @@ export const appointmentsApi = {
     return api.get<Appointment[]>(`/citas?fecha=${fecha}`);
   },
 
+  // Search appointments by DNI
+  searchByDNI: (dni: string): Promise<Appointment[]> => {
+    return api.get<Appointment[]>(`/citas/buscar/${dni}`);
+  },
+
   // Create a new appointment
   create: (data: CreateAppointmentData): Promise<Appointment> => {
     return api.post<Appointment>('/citas', data);
@@ -151,6 +156,11 @@ export const appointmentsApi = {
   // Cancel an appointment
   cancel: (id: string): Promise<Appointment> => {
     return api.patch<Appointment>(`/citas/${id}/cancelar`, {});
+  },
+
+  // Mark appointment as no-show
+  markAsNoShow: (id: string): Promise<Appointment> => {
+    return api.patch<Appointment>(`/citas/${id}/no-show`, {});
   },
 };
 
@@ -220,6 +230,141 @@ export const chatbotApi = {
   getAvailability: (professionalId: number, fechaInicio?: string): Promise<any> => {
     const params = fechaInicio ? `?fechaInicio=${fechaInicio}` : "";
     return api.get<any>(`/chatbot/availability/${professionalId}${params}`, true);
+  },
+};
+
+// Configuraciones API interface
+export interface Configuraciones {
+  reminder_48h_enabled: boolean;
+  reminder_24h_enabled: boolean;
+  canal_preferido: 'sms' | 'app' | 'ambos';
+  auto_offer_enabled: boolean;
+  tiempo_max_oferta: number;
+  prioridad_adultos_mayores: boolean;
+  prioridad_urgentes: boolean;
+  prioridad_tiempo_espera: boolean;
+  mensaje_confirmacion: string;
+  mensaje_oferta_cupo: string;
+  chatbot_enabled: boolean;
+  chatbot_greeting: string;
+  dark_mode_enabled?: boolean;
+}
+
+export const configuracionesApi = {
+  // Obtener todas las configuraciones
+  getConfiguraciones: (): Promise<Configuraciones> => {
+    return api.get<Configuraciones>('/configuraciones');
+  },
+  
+  // Actualizar configuraciones
+  updateConfiguraciones: (config: Partial<Configuraciones>): Promise<{ message: string; configuraciones: Configuraciones }> => {
+    return api.put<{ message: string; configuraciones: Configuraciones }>('/configuraciones', config);
+  },
+  
+  // Restaurar valores por defecto
+  restoreDefaults: (): Promise<{ message: string; configuraciones: Configuraciones }> => {
+    return api.post<{ message: string; configuraciones: Configuraciones }>('/configuraciones/restore', {});
+  },
+};
+
+// Sedes API interface
+export interface Sede {
+  id: number;
+  nombre: string;
+  codigo: string;
+  direccion: string;
+  telefono?: string;
+  email?: string;
+  ciudad?: string;
+  departamento?: string;
+  pais?: string;
+  activa: boolean;
+  fecha_creacion?: string;
+  fecha_actualizacion?: string;
+}
+
+export interface CreateSedeData {
+  nombre: string;
+  codigo: string;
+  direccion: string;
+  telefono?: string;
+  email?: string;
+  ciudad?: string;
+  departamento?: string;
+  pais?: string;
+  activa?: boolean;
+}
+
+export interface UpdateSedeData extends Partial<CreateSedeData> {}
+
+export const sedesApi = {
+  // Obtener todas las sedes activas
+  getSedes: (todas?: boolean): Promise<Sede[]> => {
+    const params = todas ? '?todas=true' : '';
+    return api.get<Sede[]>(`/sedes${params}`);
+  },
+  
+  // Obtener sede por defecto
+  getSedePorDefecto: (): Promise<Sede> => {
+    return api.get<Sede>('/sedes/por-defecto');
+  },
+  
+  // Obtener una sede por ID
+  getSedePorId: (id: number): Promise<Sede> => {
+    return api.get<Sede>(`/sedes/${id}`);
+  },
+  
+  // Crear nueva sede (solo admin)
+  createSede: (data: CreateSedeData): Promise<Sede> => {
+    return api.post<Sede>('/sedes', data);
+  },
+  
+  // Actualizar sede (solo admin)
+  updateSede: (id: number, data: UpdateSedeData): Promise<Sede> => {
+    return api.put<Sede>(`/sedes/${id}`, data);
+  },
+  
+  // Eliminar sede (solo admin)
+  deleteSede: (id: number): Promise<{ message: string }> => {
+    return api.delete<{ message: string }>(`/sedes/${id}`);
+  },
+};
+
+// Notificaciones API interface
+export interface Notification {
+  id: string;
+  tipo: 'confirmacion_pendiente' | 'confirmacion_fallida' | 'oferta_expirando' | 'cita_pendiente';
+  titulo: string;
+  mensaje: string;
+  fecha: string;
+  leida: boolean;
+  accion?: {
+    tipo: 'navegar';
+    ruta: string;
+    params?: Record<string, any>;
+  };
+}
+
+export interface NotificacionesResponse {
+  notificaciones: Notification[];
+  total: number;
+  noLeidas: number;
+}
+
+export const notificacionesApi = {
+  // Obtener todas las notificaciones
+  getNotificaciones: (): Promise<NotificacionesResponse> => {
+    return api.get<NotificacionesResponse>('/notificaciones');
+  },
+  
+  // Marcar notificación como leída
+  marcarLeida: (id: string): Promise<{ message: string; id: string }> => {
+    return api.patch<{ message: string; id: string }>(`/notificaciones/${id}/leer`, {});
+  },
+  
+  // Marcar todas las notificaciones como leídas
+  marcarTodasLeidas: (): Promise<{ message: string }> => {
+    return api.patch<{ message: string }>('/notificaciones/leer-todas', {});
   },
 };
 

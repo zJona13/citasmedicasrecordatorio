@@ -37,6 +37,10 @@ const statusConfig = {
     label: "Ofrecida",
     className: "bg-purple-100 text-purple-800 border-purple-300",
   },
+  no_show: {
+    label: "No-Show",
+    className: "bg-red-100 text-red-800 border-red-300",
+  },
 };
 
 type ViewType = "month" | "week" | "day";

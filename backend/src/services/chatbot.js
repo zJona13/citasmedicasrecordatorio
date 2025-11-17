@@ -4,6 +4,7 @@
  */
 import { pool } from '../db.js';
 import { calcularDisponibilidadSemanal, estaSemanaCompleta, obtenerSiguienteSemanaDisponible } from '../utils/availability.js';
+import { obtenerConfiguracion } from './configuraciones.js';
 
 // Almacenamiento de sesiones en memoria (Map)
 const sesiones = new Map();
@@ -93,6 +94,17 @@ export async function obtenerProfesionales(especialidadId) {
  * @returns {Promise<Object>} Respuesta del bot
  */
 export async function procesarMensaje(sessionId, mensaje) {
+  // Verificar si el chatbot está habilitado
+  const chatbotEnabled = await obtenerConfiguracion('chatbot_enabled');
+  if (!chatbotEnabled) {
+    return {
+      mensaje: 'Lo siento, el chatbot está temporalmente deshabilitado. Por favor, contacte con el centro médico directamente.',
+      opciones: [],
+      estado: 'finalizado',
+      finalizado: true
+    };
+  }
+
   const sesion = obtenerSesion(sessionId);
   const mensajeNormalizado = mensaje.trim().toLowerCase();
   
@@ -105,6 +117,9 @@ export async function procesarMensaje(sessionId, mensaje) {
 
   switch (sesion.estado) {
     case ESTADOS.INICIO:
+      // Obtener mensaje de bienvenida desde configuraciones
+      const greeting = await obtenerConfiguracion('chatbot_greeting');
+      
       if (mensajeNormalizado.includes('cita') || mensajeNormalizado.includes('agendar') || mensajeNormalizado.includes('reservar')) {
         const especialidades = await obtenerEspecialidades();
         if (especialidades.length === 0) {
@@ -117,7 +132,7 @@ export async function procesarMensaje(sessionId, mensaje) {
           respuesta.opciones = especialidades.map(e => ({ id: e.id, texto: e.nombre }));
         }
       } else {
-        respuesta.mensaje = 'Hola! ¿En qué puedo ayudarle? Puede escribir "cita" o "agendar" para comenzar a reservar una cita médica.';
+        respuesta.mensaje = greeting || 'Hola! ¿En qué puedo ayudarle? Puede escribir "cita" o "agendar" para comenzar a reservar una cita médica.';
       }
       break;
 

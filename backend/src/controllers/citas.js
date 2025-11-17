@@ -88,7 +88,7 @@ export const getCitas = async (req, res) => {
       } else if (cita.status === 'cancelada') {
         status = 'released';
       } else if (cita.status === 'no_show') {
-        status = 'offered';
+        status = 'no_show';
       }
       
       return {
@@ -448,7 +448,7 @@ export const updateCita = async (req, res) => {
     } else if (cita.status === 'cancelada') {
       status = 'released';
     } else if (cita.status === 'no_show') {
-      status = 'offered';
+      status = 'no_show';
     }
     
     // Obtener canal de confirmación
@@ -718,6 +718,212 @@ export const cancelarCita = async (req, res) => {
   } catch (error) {
     console.error('Error canceling cita:', error);
     res.status(500).json({ error: 'Error al cancelar la cita' });
+  }
+};
+
+// GET /api/citas/buscar/:dni - Buscar citas por DNI
+export const buscarCitasPorDNI = async (req, res) => {
+  try {
+    const { dni } = req.params;
+    
+    if (!dni || dni.trim() === '') {
+      return res.status(400).json({ error: 'DNI es requerido' });
+    }
+    
+    // Buscar todas las citas del paciente ordenadas por fecha (próximas primero)
+    const query = `
+      SELECT 
+        c.id,
+        TIME(c.hora) as time,
+        pa.nombre_completo as patient,
+        pa.dni,
+        pa.telefono,
+        pa.email,
+        pr.nombre_completo as doctor,
+        pr.id as profesional_id,
+        e.nombre as specialty,
+        c.estado as status,
+        DATE_FORMAT(c.fecha, '%Y-%m-%d') as fecha,
+        c.hora,
+        c.notas,
+        c.es_excepcional,
+        c.razon_excepcional,
+        c.razon_adicional
+      FROM citas c
+      INNER JOIN pacientes pa ON c.paciente_id = pa.id
+      INNER JOIN profesionales pr ON c.profesional_id = pr.id
+      INNER JOIN especialidades e ON pr.especialidad_id = e.id
+      WHERE pa.dni = ?
+      ORDER BY 
+        CASE 
+          WHEN c.fecha > CURDATE() THEN 1
+          WHEN c.fecha = CURDATE() THEN 2
+          ELSE 3
+        END,
+        CASE 
+          WHEN c.fecha > CURDATE() THEN CONCAT(c.fecha, ' ', c.hora)
+          ELSE '9999-12-31 23:59:59'
+        END ASC,
+        CASE 
+          WHEN c.fecha = CURDATE() THEN CONCAT('2000-01-01 ', c.hora)
+          ELSE '2000-01-01 00:00:00'
+        END DESC,
+        CASE 
+          WHEN c.fecha < CURDATE() THEN CONCAT(c.fecha, ' ', c.hora)
+          ELSE '1900-01-01 00:00:00'
+        END DESC
+    `;
+    
+    const [rows] = await pool.execute(query, [dni]);
+    
+    // Obtener información de confirmaciones para cada cita
+    const citas = await Promise.all(rows.map(async (cita) => {
+      const [confirmaciones] = await pool.execute(
+        `SELECT canal, estado_envio, respuesta FROM confirmaciones WHERE cita_id = ? ORDER BY fecha_envio DESC LIMIT 1`,
+        [cita.id]
+      );
+      
+      let channel = null;
+      if (confirmaciones.length > 0) {
+        channel = confirmaciones[0].canal;
+      }
+      
+      // Mapear estado de la base de datos al formato esperado por el frontend
+      let status = 'pending';
+      if (cita.status === 'confirmada') {
+        status = 'confirmed';
+      } else if (cita.status === 'cancelada') {
+        status = 'released';
+      } else if (cita.status === 'no_show') {
+        status = 'no_show';
+      }
+      
+      return {
+        id: cita.id.toString(),
+        time: cita.time.substring(0, 5), // Formato HH:MM
+        patient: cita.patient,
+        dni: cita.dni,
+        phone: cita.telefono,
+        email: cita.email,
+        doctor: cita.doctor,
+        profesional_id: cita.profesional_id,
+        specialty: cita.specialty,
+        status: status,
+        channel: channel || 'App',
+        fecha: cita.fecha,
+        hora: cita.hora,
+        notas: cita.notas,
+        es_excepcional: cita.es_excepcional || false,
+        razon_excepcional: cita.razon_excepcional,
+        razon_adicional: cita.razon_adicional,
+      };
+    }));
+
+    res.json(citas);
+  } catch (error) {
+    console.error('Error buscando citas por DNI:', error);
+    res.status(500).json({ error: 'Error al buscar citas' });
+  }
+};
+
+// PATCH /api/citas/:id/no-show - Marcar cita como no-show
+export const marcarNoShow = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Validar que la cita existe
+    const [citaRows] = await pool.execute(
+      `SELECT c.*, pa.nombre_completo as patient, pa.telefono, pa.email,
+              pr.nombre_completo as doctor, e.nombre as specialty
+       FROM citas c
+       INNER JOIN pacientes pa ON c.paciente_id = pa.id
+       INNER JOIN profesionales pr ON c.profesional_id = pr.id
+       INNER JOIN especialidades e ON pr.especialidad_id = e.id
+       WHERE c.id = ?`,
+      [id]
+    );
+    
+    if (citaRows.length === 0) {
+      return res.status(404).json({ error: 'Cita no encontrada' });
+    }
+    
+    const cita = citaRows[0];
+    
+    // Verificar que la cita esté en estado pendiente o confirmada
+    if (cita.estado !== 'pendiente' && cita.estado !== 'confirmada') {
+      return res.status(400).json({ 
+        error: 'Solo se pueden marcar como no-show las citas en estado pendiente o confirmada' 
+      });
+    }
+    
+    // Actualizar estado de la cita a no_show
+    await pool.execute(
+      `UPDATE citas SET estado = 'no_show' WHERE id = ?`,
+      [id]
+    );
+    
+    // Obtener la cita actualizada
+    const [citaActualizada] = await pool.execute(
+      `SELECT 
+        c.id,
+        TIME(c.hora) as time,
+        pa.nombre_completo as patient,
+        pa.dni,
+        pa.telefono,
+        pa.email,
+        pr.nombre_completo as doctor,
+        pr.id as profesional_id,
+        e.nombre as specialty,
+        c.estado as status,
+        DATE_FORMAT(c.fecha, '%Y-%m-%d') as fecha,
+        c.hora,
+        c.notas,
+        c.es_excepcional,
+        c.razon_excepcional,
+        c.razon_adicional
+      FROM citas c
+      INNER JOIN pacientes pa ON c.paciente_id = pa.id
+      INNER JOIN profesionales pr ON c.profesional_id = pr.id
+      INNER JOIN especialidades e ON pr.especialidad_id = e.id
+      WHERE c.id = ?`,
+      [id]
+    );
+    
+    const citaActual = citaActualizada[0];
+    
+    // Obtener canal de confirmación
+    const [confirmaciones] = await pool.execute(
+      `SELECT canal FROM confirmaciones WHERE cita_id = ? ORDER BY fecha_envio DESC LIMIT 1`,
+      [id]
+    );
+    
+    let channel = 'App';
+    if (confirmaciones.length > 0) {
+      channel = confirmaciones[0].canal;
+    }
+    
+    res.json({
+      id: citaActual.id.toString(),
+      time: citaActual.time.substring(0, 5),
+      patient: citaActual.patient,
+      dni: citaActual.dni,
+      phone: citaActual.telefono,
+      email: citaActual.email,
+      doctor: citaActual.doctor,
+      profesional_id: citaActual.profesional_id,
+      specialty: citaActual.specialty,
+      status: 'no_show',
+      channel: channel,
+      fecha: citaActual.fecha,
+      hora: citaActual.hora,
+      notas: citaActual.notas,
+      es_excepcional: citaActual.es_excepcional || false,
+      razon_excepcional: citaActual.razon_excepcional,
+      razon_adicional: citaActual.razon_adicional,
+    });
+  } catch (error) {
+    console.error('Error marking cita as no-show:', error);
+    res.status(500).json({ error: 'Error al marcar la cita como no-show' });
   }
 };
 

@@ -33,6 +33,7 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
   const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
+  const [isNoShowDialogOpen, setIsNoShowDialogOpen] = useState(false);
 
   // Mutation para confirmar cita
   const confirmMutation = useMutation({
@@ -40,14 +41,29 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
       if (!appointment) throw new Error('No hay cita seleccionada');
       return appointmentsApi.confirm(appointment.id);
     },
-    onSuccess: (data: Appointment & { mensajeEnviado?: boolean }) => {
+    onSuccess: (updatedAppointment: Appointment & { mensajeEnviado?: boolean }) => {
+      // Actualizar optimísticamente todas las queries de citas
+      queryClient.setQueriesData<Appointment[]>(
+        { queryKey: ['citas'] },
+        (oldData) => {
+          if (!oldData) return oldData;
+          return oldData.map((cita) =>
+            cita.id === updatedAppointment.id ? updatedAppointment : cita
+          );
+        }
+      );
+      
+      // Invalidar y refetch para asegurar sincronización
+      queryClient.invalidateQueries({ queryKey: ['citas'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.refetchQueries({ queryKey: ['citas'] });
+      
       toast({
         title: "Cita confirmada",
-        description: (data as any).mensajeEnviado 
+        description: (updatedAppointment as any).mensajeEnviado 
           ? "La cita ha sido confirmada y se ha enviado un mensaje al paciente."
           : "La cita ha sido confirmada.",
       });
-      queryClient.invalidateQueries({ queryKey: ['citas'] });
       onOpenChange(false);
     },
     onError: (error: Error) => {
@@ -65,18 +81,73 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
       if (!appointment) throw new Error('No hay cita seleccionada');
       return appointmentsApi.cancel(appointment.id);
     },
-    onSuccess: () => {
+    onSuccess: (updatedAppointment: Appointment) => {
+      // Actualizar optimísticamente todas las queries de citas
+      queryClient.setQueriesData<Appointment[]>(
+        { queryKey: ['citas'] },
+        (oldData) => {
+          if (!oldData) return oldData;
+          return oldData.map((cita) =>
+            cita.id === updatedAppointment.id ? updatedAppointment : cita
+          );
+        }
+      );
+      
+      // Invalidar y refetch para asegurar sincronización
+      queryClient.invalidateQueries({ queryKey: ['citas'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.refetchQueries({ queryKey: ['citas'] });
+      
       toast({
         title: "Cita cancelada",
         description: "La cita ha sido cancelada. Se notificará a la lista de espera si corresponde.",
       });
-      queryClient.invalidateQueries({ queryKey: ['citas'] });
       onOpenChange(false);
     },
     onError: (error: Error) => {
       toast({
         title: "Error",
         description: error.message || "No se pudo cancelar la cita.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Mutation para marcar como no-show
+  const noShowMutation = useMutation({
+    mutationFn: () => {
+      if (!appointment) throw new Error('No hay cita seleccionada');
+      return appointmentsApi.markAsNoShow(appointment.id);
+    },
+    onSuccess: (updatedAppointment: Appointment) => {
+      // Actualizar optimísticamente todas las queries de citas
+      queryClient.setQueriesData<Appointment[]>(
+        { queryKey: ['citas'] },
+        (oldData) => {
+          if (!oldData) return oldData;
+          return oldData.map((cita) =>
+            cita.id === updatedAppointment.id ? updatedAppointment : cita
+          );
+        }
+      );
+      
+      // Invalidar y refetch para asegurar sincronización
+      queryClient.invalidateQueries({ queryKey: ['citas'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      
+      // Forzar refetch inmediato
+      queryClient.refetchQueries({ queryKey: ['citas'] });
+      
+      toast({
+        title: "Cita marcada como No-Show",
+        description: "La cita ha sido marcada como no-show. El paciente no asistió a la cita.",
+      });
+      onOpenChange(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo marcar la cita como no-show.",
         variant: "destructive",
       });
     },
@@ -104,6 +175,15 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
     cancelMutation.mutate();
   };
 
+  const handleNoShow = () => {
+    setIsNoShowDialogOpen(true);
+  };
+
+  const handleNoShowAction = () => {
+    setIsNoShowDialogOpen(false);
+    noShowMutation.mutate();
+  };
+
   // Early return DESPUÉS de todos los hooks
   if (!appointment) return null;
 
@@ -113,6 +193,7 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
       case "pending": return "Pendiente";
       case "offered": return "Ofrecida";
       case "released": return "Liberada";
+      case "no_show": return "No-Show";
       default: return "Pendiente";
     }
   };
@@ -123,6 +204,7 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
       case "pending": return "secondary";
       case "offered": return "outline";
       case "released": return "secondary";
+      case "no_show": return "destructive";
       default: return "secondary";
     }
   };
@@ -135,10 +217,12 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
   const isConfirmed = appointment.status === 'confirmed';
   const isCancelled = appointment.status === 'released';
   const isCompleted = appointment.status === 'offered'; // Asumiendo que 'offered' es completada
+  const isNoShow = appointment.status === 'no_show';
 
-  const canReschedule = !isCancelled && !isCompleted;
-  const canConfirm = !isConfirmed && !isCancelled && !isCompleted;
-  const canCancel = !isCancelled && !isCompleted;
+  const canReschedule = !isCancelled && !isCompleted && !isNoShow;
+  const canConfirm = !isConfirmed && !isCancelled && !isCompleted && !isNoShow;
+  const canCancel = !isCancelled && !isCompleted && !isNoShow;
+  const canMarkNoShow = (appointment.status === 'pending' || appointment.status === 'confirmed') && !isCancelled && !isCompleted;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -247,21 +331,29 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
             <Button 
               variant="outline" 
               onClick={handleReschedule}
-              disabled={!canReschedule || confirmMutation.isPending || cancelMutation.isPending}
+              disabled={!canReschedule || confirmMutation.isPending || cancelMutation.isPending || noShowMutation.isPending}
             >
               Reagendar
             </Button>
             <Button 
+              variant="destructive" 
+              onClick={handleNoShow}
+              disabled={!canMarkNoShow || confirmMutation.isPending || cancelMutation.isPending || noShowMutation.isPending}
+            >
+              {noShowMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Marcar como No-Show
+            </Button>
+            <Button 
               variant="outline" 
               onClick={handleCancel}
-              disabled={!canCancel || confirmMutation.isPending || cancelMutation.isPending}
+              disabled={!canCancel || confirmMutation.isPending || cancelMutation.isPending || noShowMutation.isPending}
             >
               {cancelMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Cancelar Cita
             </Button>
             <Button 
               onClick={handleConfirm}
-              disabled={!canConfirm || confirmMutation.isPending || cancelMutation.isPending}
+              disabled={!canConfirm || confirmMutation.isPending || cancelMutation.isPending || noShowMutation.isPending}
             >
               {confirmMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Confirmar
@@ -351,6 +443,43 @@ export function AppointmentDetailsModal({ open, onOpenChange, appointment }: App
             >
               {cancelMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Sí, cancelar cita
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Diálogo de confirmación para marcar como no-show */}
+      <AlertDialog open={isNoShowDialogOpen} onOpenChange={setIsNoShowDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900">
+                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <AlertDialogTitle>Marcar como No-Show</AlertDialogTitle>
+                <AlertDialogDescription className="mt-1">
+                  ¿Está seguro de que desea marcar esta cita como no-show?
+                </AlertDialogDescription>
+              </div>
+            </div>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              Esta acción marcará la cita como no-show, indicando que el paciente no asistió a la cita programada.
+            </p>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={noShowMutation.isPending}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleNoShowAction}
+              disabled={noShowMutation.isPending}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {noShowMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Sí, marcar como no-show
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
