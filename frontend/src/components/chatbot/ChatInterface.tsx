@@ -74,6 +74,7 @@ export function ChatInterface({ sessionId }: ChatInterfaceProps) {
         isBot: true,
         timestamp: new Date(),
         options: response.opciones,
+        availability: response.availability,
       };
       setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
@@ -92,6 +93,12 @@ export function ChatInterface({ sessionId }: ChatInterfaceProps) {
 
   const handleOptionClick = (option: { id: string; texto: string }) => {
     sendMessage(option.texto);
+  };
+
+  const handleAvailabilitySelect = (fecha: string, hora: string) => {
+    // Enviar mensaje en formato "YYYY-MM-DD HH:MM" que el backend espera
+    const message = `${fecha} ${hora}`;
+    sendMessage(message);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -124,6 +131,14 @@ export function ChatInterface({ sessionId }: ChatInterfaceProps) {
                     {option.texto}
                   </Button>
                 ))}
+              </div>
+            )}
+            {message.availability && message.availability.length > 0 && (
+              <div className="mt-2">
+                <AvailabilitySelector
+                  availability={message.availability}
+                  onSelect={handleAvailabilitySelect}
+                />
               </div>
             )}
           </div>

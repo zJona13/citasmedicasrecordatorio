@@ -194,7 +194,7 @@ export async function procesarMensaje(sessionId, mensaje) {
             respuesta.mensaje = `La semana actual está completamente ocupada. La siguiente semana tiene disponibilidad. ¿Desea ver esos horarios o prefiere unirse a la lista de espera?`;
             sesion.datos.siguienteSemana = siguienteSemana;
             respuesta.opciones = [
-              { id: 'ver_siguiente', texto: 'Ver horarios de la próxima semana' },
+              { id: 'ver_siguiente', texto: 'Ver horarios de siguientes semanas' },
               { id: 'lista_espera', texto: 'Unirme a la lista de espera' }
             ];
           } else {
@@ -225,8 +225,9 @@ export async function procesarMensaje(sessionId, mensaje) {
               });
               mensajeDisponibilidad += `${fechaFormateada}: ${slots.join(', ')}\n`;
             });
-            mensajeDisponibilidad += '\n¿Cuál horario prefiere? (Ejemplo: "2024-12-15 10:00")';
+            mensajeDisponibilidad += '\nSeleccione un horario disponible:';
             respuesta.mensaje = mensajeDisponibilidad;
+            respuesta.availability = diasDisponibles;
             sesion.datos.diasDisponibles = diasDisponibles;
           } else {
             respuesta.mensaje = 'No hay horarios disponibles en este momento. ¿Desea unirse a la lista de espera?';
@@ -248,7 +249,13 @@ export async function procesarMensaje(sessionId, mensaje) {
 
     case ESTADOS.DISPONIBILIDAD:
       // Procesar selección de horario o respuesta sobre lista de espera
-      if (mensajeNormalizado === 'ver_siguiente' || mensajeNormalizado.includes('siguiente')) {
+      // Verificar si el mensaje es para ver la siguiente semana (más flexible)
+      const esVerSiguiente = mensajeNormalizado === 'ver_siguiente' || 
+                            mensajeNormalizado.includes('ver horarios') && mensajeNormalizado.includes('próxima') ||
+                            mensajeNormalizado.includes('ver horarios') && mensajeNormalizado.includes('siguiente') ||
+                            (mensajeNormalizado.includes('siguiente') && mensajeNormalizado.includes('semana'));
+      
+      if (esVerSiguiente) {
         if (sesion.datos.siguienteSemana) {
           const diasDisponibles = Object.entries(sesion.datos.siguienteSemana.disponibilidad)
             .filter(([_, info]) => info.disponible)
@@ -258,18 +265,33 @@ export async function procesarMensaje(sessionId, mensaje) {
               slots: info.slots
             }));
           
-          let mensajeDisponibilidad = `Horarios disponibles para la próxima semana:\n\n`;
-          diasDisponibles.forEach(({ fecha, dia, slots }) => {
-            const fechaFormateada = new Date(fecha).toLocaleDateString('es-PE', {
-              weekday: 'long',
-              day: 'numeric',
-              month: 'long'
+          if (diasDisponibles.length > 0) {
+            let mensajeDisponibilidad = `Horarios disponibles para la próxima semana:\n\n`;
+            diasDisponibles.forEach(({ fecha, dia, slots }) => {
+              const fechaFormateada = new Date(fecha).toLocaleDateString('es-PE', {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long'
+              });
+              mensajeDisponibilidad += `${fechaFormateada}: ${slots.join(', ')}\n`;
             });
-            mensajeDisponibilidad += `${fechaFormateada}: ${slots.join(', ')}\n`;
-          });
-          mensajeDisponibilidad += '\n¿Cuál horario prefiere? (Ejemplo: "2024-12-22 10:00")';
-          respuesta.mensaje = mensajeDisponibilidad;
-          sesion.datos.diasDisponibles = diasDisponibles;
+            mensajeDisponibilidad += '\nSeleccione un horario disponible:';
+            respuesta.mensaje = mensajeDisponibilidad;
+            respuesta.availability = diasDisponibles;
+            sesion.datos.diasDisponibles = diasDisponibles;
+          } else {
+            respuesta.mensaje = 'No hay horarios disponibles para la próxima semana. ¿Desea unirse a la lista de espera?';
+            respuesta.opciones = [
+              { id: 'lista_espera', texto: 'Sí, unirme a la lista de espera' },
+              { id: 'cancelar', texto: 'No, cancelar' }
+            ];
+          }
+        } else {
+          respuesta.mensaje = 'No hay información de la próxima semana disponible. ¿Desea unirse a la lista de espera?';
+          respuesta.opciones = [
+            { id: 'lista_espera', texto: 'Sí, unirme a la lista de espera' },
+            { id: 'cancelar', texto: 'No, cancelar' }
+          ];
         }
       } else if (mensajeNormalizado === 'lista_espera' || mensajeNormalizado.includes('lista') || mensajeNormalizado.includes('espera')) {
         sesion.estado = ESTADOS.TELEFONO;
@@ -279,7 +301,7 @@ export async function procesarMensaje(sessionId, mensaje) {
         respuesta.finalizado = true;
         sesion.estado = ESTADOS.FINALIZADO;
       } else {
-        // Intentar parsear fecha y hora
+        // Intentar parsear fecha y hora (formato YYYY-MM-DD HH:MM) - solo si viene del selector de disponibilidad
         const partes = mensajeNormalizado.split(/\s+/);
         if (partes.length >= 2) {
           const fecha = partes[0];
@@ -299,13 +321,64 @@ export async function procesarMensaje(sessionId, mensaje) {
                 { id: 'cancelar', texto: 'No, cancelar' }
               ];
             } else {
-              respuesta.mensaje = 'Ese horario no está disponible. Por favor, seleccione uno de los horarios mostrados.';
+              // Horario no disponible, mostrar opciones nuevamente
+              respuesta.mensaje = 'Ese horario no está disponible. Por favor, seleccione uno de los horarios disponibles:';
+              // Siempre mostrar disponibilidad si está guardada
+              if (sesion.datos.diasDisponibles && sesion.datos.diasDisponibles.length > 0) {
+                respuesta.availability = sesion.datos.diasDisponibles;
+              } else if (sesion.datos.siguienteSemana) {
+                // Si no hay disponibilidad actual pero hay siguiente semana, ofrecerla
+                respuesta.mensaje = 'No hay disponibilidad en la semana actual. ¿Desea ver los horarios de la próxima semana?';
+                respuesta.opciones = [
+                  { id: 'ver_siguiente', texto: 'Ver horarios de siguientes semanas' },
+                  { id: 'lista_espera', texto: 'Unirme a la lista de espera' }
+                ];
+              } else {
+                // Si no hay disponibilidad, ofrecer lista de espera
+                respuesta.mensaje = 'No hay horarios disponibles. ¿Desea unirse a la lista de espera?';
+                respuesta.opciones = [
+                  { id: 'lista_espera', texto: 'Sí, unirme a la lista de espera' },
+                  { id: 'cancelar', texto: 'No, cancelar' }
+                ];
+              }
             }
           } else {
-            respuesta.mensaje = 'Por favor, ingrese la fecha y hora en el formato: YYYY-MM-DD HH:MM (ejemplo: 2024-12-15 10:00)';
+            // Mensaje no reconocido - siempre mostrar opciones disponibles
+            if (sesion.datos.diasDisponibles && sesion.datos.diasDisponibles.length > 0) {
+              respuesta.mensaje = 'Por favor, seleccione un horario usando los botones disponibles:';
+              respuesta.availability = sesion.datos.diasDisponibles;
+            } else if (sesion.datos.siguienteSemana) {
+              respuesta.mensaje = 'No hay disponibilidad en la semana actual. ¿Desea ver los horarios de la próxima semana?';
+              respuesta.opciones = [
+                { id: 'ver_siguiente', texto: 'Ver horarios de siguientes semanas' },
+                { id: 'lista_espera', texto: 'Unirme a la lista de espera' }
+              ];
+            } else {
+              respuesta.mensaje = 'No hay horarios disponibles. ¿Desea unirse a la lista de espera?';
+              respuesta.opciones = [
+                { id: 'lista_espera', texto: 'Sí, unirme a la lista de espera' },
+                { id: 'cancelar', texto: 'No, cancelar' }
+              ];
+            }
           }
         } else {
-          respuesta.mensaje = 'Por favor, ingrese la fecha y hora en el formato: YYYY-MM-DD HH:MM (ejemplo: 2024-12-15 10:00)';
+          // Mensaje no reconocido - siempre mostrar opciones disponibles
+          if (sesion.datos.diasDisponibles && sesion.datos.diasDisponibles.length > 0) {
+            respuesta.mensaje = 'Por favor, seleccione un horario usando los botones disponibles:';
+            respuesta.availability = sesion.datos.diasDisponibles;
+          } else if (sesion.datos.siguienteSemana) {
+            respuesta.mensaje = 'No hay disponibilidad en la semana actual. ¿Desea ver los horarios de la próxima semana?';
+            respuesta.opciones = [
+              { id: 'ver_siguiente', texto: 'Ver horarios de siguientes semanas' },
+              { id: 'lista_espera', texto: 'Unirme a la lista de espera' }
+            ];
+          } else {
+            respuesta.mensaje = 'No hay horarios disponibles. ¿Desea unirse a la lista de espera?';
+            respuesta.opciones = [
+              { id: 'lista_espera', texto: 'Sí, unirme a la lista de espera' },
+              { id: 'cancelar', texto: 'No, cancelar' }
+            ];
+          }
         }
       }
       break;

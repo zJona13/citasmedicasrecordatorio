@@ -198,6 +198,11 @@ export const reniecApi = {
 export interface ChatbotMessage {
   mensaje: string;
   opciones?: Array<{ id: string; texto: string }>;
+  availability?: Array<{
+    fecha: string;
+    dia: string;
+    slots: string[];
+  }>;
   estado: string;
   finalizado: boolean;
 }
