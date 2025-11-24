@@ -5,8 +5,9 @@ import { AppointmentCalendar } from "@/components/citas/AppointmentCalendar";
 import { NewAppointmentModal } from "@/components/citas/NewAppointmentModal";
 import { AppointmentDetailsModal } from "@/components/citas/AppointmentDetailsModal";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Download } from "lucide-react";
 import { Appointment, appointmentsApi } from "@/lib/api";
+import { toast } from "sonner";
 
 export default function Citas() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -15,6 +16,7 @@ export default function Citas() {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [preselectedDate, setPreselectedDate] = useState<Date | undefined>(undefined);
+  const [isExporting, setIsExporting] = useState(false);
   
   const citaId = searchParams.get("citaId");
   
@@ -62,6 +64,19 @@ export default function Citas() {
     }
   }, [appointmentFromState, appointmentFromSearch, setSearchParams]);
 
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    try {
+      await appointmentsApi.exportCSV();
+      toast.success('Citas exportadas correctamente');
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      toast.error(error instanceof Error ? error.message : 'Error al exportar citas');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -71,10 +86,21 @@ export default function Citas() {
             Hospital Luis Heysen II de Chiclayo
           </p>
         </div>
-        <Button onClick={() => setIsNewModalOpen(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Nueva Cita
-        </Button>
+        <div className="flex gap-2">
+          <Button 
+            onClick={handleExportCSV} 
+            variant="outline" 
+            className="gap-2"
+            disabled={isExporting}
+          >
+            <Download className="h-4 w-4" />
+            {isExporting ? 'Exportando...' : 'Exportar CSV'}
+          </Button>
+          <Button onClick={() => setIsNewModalOpen(true)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Nueva Cita
+          </Button>
+        </div>
       </div>
 
       <AppointmentCalendar 

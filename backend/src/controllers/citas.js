@@ -8,7 +8,42 @@ export const getCitas = async (req, res) => {
   try {
     const { fecha, fecha_inicio, fecha_fin, profesional_id } = req.query;
     
-    let query = `
+    const params = [];
+    let whereClause = 'WHERE 1=1';
+    
+    // Soporte para fecha única (compatibilidad hacia atrás)
+    if (fecha) {
+      whereClause += ` AND c.fecha = ?`;
+      params.push(fecha);
+    }
+    
+    // Soporte para rango de fechas
+    if (fecha_inicio && fecha_fin) {
+      whereClause += ` AND c.fecha >= ? AND c.fecha <= ?`;
+      params.push(fecha_inicio, fecha_fin);
+    } else if (fecha_inicio) {
+      whereClause += ` AND c.fecha >= ?`;
+      params.push(fecha_inicio);
+    } else if (fecha_fin) {
+      whereClause += ` AND c.fecha <= ?`;
+      params.push(fecha_fin);
+    }
+    
+    // Si no se proporciona ninguna fecha, usar la fecha de hoy
+    if (!fecha && !fecha_inicio && !fecha_fin) {
+      const fechaHoy = new Date().toISOString().split('T')[0];
+      whereClause += ` AND c.fecha = ?`;
+      params.push(fechaHoy);
+    }
+    
+    if (profesional_id) {
+      whereClause += ` AND c.profesional_id = ?`;
+      params.push(profesional_id);
+    }
+    
+    // Optimización: Usar LEFT JOIN con subconsulta para obtener la última confirmación en una sola consulta
+    // Esto elimina el problema N+1 (de N+1 consultas a 1 sola consulta)
+    const query = `
       SELECT 
         c.id,
         TIME(c.hora) as time,
@@ -25,62 +60,29 @@ export const getCitas = async (req, res) => {
         c.notas,
         c.es_excepcional,
         c.razon_excepcional,
-        c.razon_adicional
+        c.razon_adicional,
+        conf.canal as channel
       FROM citas c
       INNER JOIN pacientes pa ON c.paciente_id = pa.id
       INNER JOIN profesionales pr ON c.profesional_id = pr.id
       INNER JOIN especialidades e ON pr.especialidad_id = e.id
-      WHERE 1=1
+      LEFT JOIN (
+        SELECT conf1.cita_id, conf1.canal
+        FROM confirmaciones conf1
+        INNER JOIN (
+          SELECT cita_id, MAX(fecha_envio) as max_fecha_envio
+          FROM confirmaciones
+          GROUP BY cita_id
+        ) conf2 ON conf1.cita_id = conf2.cita_id AND conf1.fecha_envio = conf2.max_fecha_envio
+      ) conf ON c.id = conf.cita_id
+      ${whereClause}
+      ORDER BY c.fecha ASC, c.hora ASC
     `;
-    
-    const params = [];
-    
-    // Soporte para fecha única (compatibilidad hacia atrás)
-    if (fecha) {
-      query += ` AND c.fecha = ?`;
-      params.push(fecha);
-    }
-    
-    // Soporte para rango de fechas
-    if (fecha_inicio && fecha_fin) {
-      query += ` AND c.fecha >= ? AND c.fecha <= ?`;
-      params.push(fecha_inicio, fecha_fin);
-    } else if (fecha_inicio) {
-      query += ` AND c.fecha >= ?`;
-      params.push(fecha_inicio);
-    } else if (fecha_fin) {
-      query += ` AND c.fecha <= ?`;
-      params.push(fecha_fin);
-    }
-    
-    // Si no se proporciona ninguna fecha, usar la fecha de hoy
-    if (!fecha && !fecha_inicio && !fecha_fin) {
-      const fechaHoy = new Date().toISOString().split('T')[0];
-      query += ` AND c.fecha = ?`;
-      params.push(fechaHoy);
-    }
-    
-    if (profesional_id) {
-      query += ` AND c.profesional_id = ?`;
-      params.push(profesional_id);
-    }
-    
-    query += ` ORDER BY c.fecha ASC, c.hora ASC`;
     
     const [rows] = await pool.execute(query, params);
     
-    // Obtener información de confirmaciones para cada cita
-    const citas = await Promise.all(rows.map(async (cita) => {
-      const [confirmaciones] = await pool.execute(
-        `SELECT canal, estado_envio, respuesta FROM confirmaciones WHERE cita_id = ? ORDER BY fecha_envio DESC LIMIT 1`,
-        [cita.id]
-      );
-      
-      let channel = null;
-      if (confirmaciones.length > 0) {
-        channel = confirmaciones[0].canal;
-      }
-      
+    // Mapear resultados directamente sin consultas adicionales
+    const citas = rows.map((cita) => {
       // Mapear estado de la base de datos al formato esperado por el frontend
       let status = 'pending';
       if (cita.status === 'confirmada') {
@@ -102,7 +104,7 @@ export const getCitas = async (req, res) => {
         profesional_id: cita.profesional_id,
         specialty: cita.specialty,
         status: status,
-        channel: channel || 'App',
+        channel: cita.channel || 'App',
         fecha: cita.fecha,
         hora: cita.hora,
         notas: cita.notas,
@@ -110,7 +112,7 @@ export const getCitas = async (req, res) => {
         razon_excepcional: cita.razon_excepcional,
         razon_adicional: cita.razon_adicional,
       };
-    }));
+    });
 
     res.json(citas);
   } catch (error) {
@@ -730,7 +732,8 @@ export const buscarCitasPorDNI = async (req, res) => {
       return res.status(400).json({ error: 'DNI es requerido' });
     }
     
-    // Buscar todas las citas del paciente ordenadas por fecha (próximas primero)
+    // Optimización: Usar LEFT JOIN con subconsulta para obtener la última confirmación en una sola consulta
+    // Esto elimina el problema N+1
     const query = `
       SELECT 
         c.id,
@@ -748,11 +751,21 @@ export const buscarCitasPorDNI = async (req, res) => {
         c.notas,
         c.es_excepcional,
         c.razon_excepcional,
-        c.razon_adicional
+        c.razon_adicional,
+        conf.canal as channel
       FROM citas c
       INNER JOIN pacientes pa ON c.paciente_id = pa.id
       INNER JOIN profesionales pr ON c.profesional_id = pr.id
       INNER JOIN especialidades e ON pr.especialidad_id = e.id
+      LEFT JOIN (
+        SELECT conf1.cita_id, conf1.canal
+        FROM confirmaciones conf1
+        INNER JOIN (
+          SELECT cita_id, MAX(fecha_envio) as max_fecha_envio
+          FROM confirmaciones
+          GROUP BY cita_id
+        ) conf2 ON conf1.cita_id = conf2.cita_id AND conf1.fecha_envio = conf2.max_fecha_envio
+      ) conf ON c.id = conf.cita_id
       WHERE pa.dni = ?
       ORDER BY 
         CASE 
@@ -776,18 +789,8 @@ export const buscarCitasPorDNI = async (req, res) => {
     
     const [rows] = await pool.execute(query, [dni]);
     
-    // Obtener información de confirmaciones para cada cita
-    const citas = await Promise.all(rows.map(async (cita) => {
-      const [confirmaciones] = await pool.execute(
-        `SELECT canal, estado_envio, respuesta FROM confirmaciones WHERE cita_id = ? ORDER BY fecha_envio DESC LIMIT 1`,
-        [cita.id]
-      );
-      
-      let channel = null;
-      if (confirmaciones.length > 0) {
-        channel = confirmaciones[0].canal;
-      }
-      
+    // Mapear resultados directamente sin consultas adicionales
+    const citas = rows.map((cita) => {
       // Mapear estado de la base de datos al formato esperado por el frontend
       let status = 'pending';
       if (cita.status === 'confirmada') {
@@ -809,7 +812,7 @@ export const buscarCitasPorDNI = async (req, res) => {
         profesional_id: cita.profesional_id,
         specialty: cita.specialty,
         status: status,
-        channel: channel || 'App',
+        channel: cita.channel || 'App',
         fecha: cita.fecha,
         hora: cita.hora,
         notas: cita.notas,
@@ -817,7 +820,7 @@ export const buscarCitasPorDNI = async (req, res) => {
         razon_excepcional: cita.razon_excepcional,
         razon_adicional: cita.razon_adicional,
       };
-    }));
+    });
 
     res.json(citas);
   } catch (error) {
@@ -924,6 +927,151 @@ export const marcarNoShow = async (req, res) => {
   } catch (error) {
     console.error('Error marking cita as no-show:', error);
     res.status(500).json({ error: 'Error al marcar la cita como no-show' });
+  }
+};
+
+// GET /api/citas/exportar - Exportar todas las citas a CSV
+export const exportarCitasCSV = async (req, res) => {
+  console.log('Exportar CSV endpoint llamado');
+  try {
+    // Optimización: Usar LEFT JOIN con subconsulta para obtener la última confirmación en una sola consulta
+    // Esto elimina el problema N+1
+    const query = `
+      SELECT 
+        c.id,
+        DATE_FORMAT(c.fecha, '%Y-%m-%d') as fecha,
+        TIME(c.hora) as hora,
+        c.estado as status,
+        pa.dni,
+        pa.nombre_completo as paciente_nombre,
+        pa.telefono,
+        pa.email,
+        pr.nombre_completo as profesional_nombre,
+        pr.id as profesional_id,
+        e.nombre as especialidad,
+        c.notas,
+        c.es_excepcional,
+        c.razon_excepcional,
+        c.razon_adicional,
+        COALESCE(conf.canal, 'App') as canal
+      FROM citas c
+      INNER JOIN pacientes pa ON c.paciente_id = pa.id
+      INNER JOIN profesionales pr ON c.profesional_id = pr.id
+      INNER JOIN especialidades e ON pr.especialidad_id = e.id
+      LEFT JOIN (
+        SELECT conf1.cita_id, conf1.canal
+        FROM confirmaciones conf1
+        INNER JOIN (
+          SELECT cita_id, MAX(fecha_envio) as max_fecha_envio
+          FROM confirmaciones
+          GROUP BY cita_id
+        ) conf2 ON conf1.cita_id = conf2.cita_id AND conf1.fecha_envio = conf2.max_fecha_envio
+      ) conf ON c.id = conf.cita_id
+      ORDER BY c.fecha ASC, c.hora ASC
+    `;
+    
+    const [citasConConfirmacion] = await pool.execute(query);
+    
+    // Mapear estados al formato legible
+    const estadoMap = {
+      'pendiente': 'Pendiente',
+      'confirmada': 'Confirmada',
+      'cancelada': 'Cancelada',
+      'completada': 'Completada',
+      'no_show': 'No Show'
+    };
+    
+    const razonExcepcionalMap = {
+      'emergencia': 'Emergencia',
+      'caso_especial': 'Caso Especial',
+      'extension_horario': 'Extensión de Horario',
+      'otro': 'Otro'
+    };
+    
+    // Generar CSV
+    const headers = [
+      'ID',
+      'Fecha',
+      'Hora',
+      'Estado',
+      'DNI',
+      'Nombre Completo',
+      'Teléfono',
+      'Email',
+      'Profesional',
+      'ID Profesional',
+      'Especialidad',
+      'Notas',
+      'Es Excepcional',
+      'Razón Excepcional',
+      'Razón Adicional',
+      'Canal'
+    ];
+    
+    // Función para escapar valores CSV (manejar comillas y comas)
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) {
+        return '';
+      }
+      const str = String(value);
+      // Si contiene comillas, comas o saltos de línea, envolver en comillas y escapar comillas
+      if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+        return `"${str.replaceAll('"', '""')}"`;
+      }
+      return str;
+    };
+    
+    // Construir CSV
+    let csv = headers.join(',') + '\n';
+    
+    for (const row of citasConConfirmacion) {
+      const estado = estadoMap[row.status] || row.status;
+      const razonExcepcional = row.razon_excepcional 
+        ? (razonExcepcionalMap[row.razon_excepcional] || row.razon_excepcional)
+        : '';
+      const esExcepcional = row.es_excepcional ? 'Sí' : 'No';
+      
+      const csvRow = [
+        escapeCSV(row.id),
+        escapeCSV(row.fecha),
+        escapeCSV(row.hora ? row.hora.substring(0, 5) : ''), // Formato HH:MM
+        escapeCSV(estado),
+        escapeCSV(row.dni),
+        escapeCSV(row.paciente_nombre),
+        escapeCSV(row.telefono),
+        escapeCSV(row.email),
+        escapeCSV(row.profesional_nombre),
+        escapeCSV(row.profesional_id),
+        escapeCSV(row.especialidad),
+        escapeCSV(row.notas),
+        escapeCSV(esExcepcional),
+        escapeCSV(razonExcepcional),
+        escapeCSV(row.razon_adicional),
+        escapeCSV(row.canal)
+      ];
+      
+      csv += csvRow.join(',') + '\n';
+    }
+    
+    // Generar nombre de archivo con fecha actual
+    const fechaActual = new Date().toISOString().split('T')[0];
+    const filename = `citas_${fechaActual}.csv`;
+    
+    // Configurar headers para descarga
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    
+    // Incluir BOM UTF-8 al inicio del CSV para Excel
+    const csvWithBOM = '\ufeff' + csv;
+    
+    // Enviar respuesta
+    res.send(csvWithBOM);
+  } catch (error) {
+    console.error('Error exporting citas to CSV:', error);
+    // Solo enviar error si la respuesta no ha sido enviada aún
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Error al exportar citas a CSV' });
+    }
   }
 };
 

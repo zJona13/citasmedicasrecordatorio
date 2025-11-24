@@ -48,25 +48,22 @@ export const getPacientes = async (req, res) => {
       status: p.status,
     }));
 
-    // Obtener estadísticas
-    const [total] = await pool.execute('SELECT COUNT(*) as total FROM pacientes');
-    const [activos] = await pool.execute(
-      `SELECT COUNT(*) as total FROM pacientes WHERE estado = 'activo' AND fecha_creacion >= DATE_SUB(NOW(), INTERVAL 30 DAY)`
-    );
-    const [nuevos] = await pool.execute(
-      `SELECT COUNT(*) as total FROM pacientes WHERE fecha_creacion >= DATE_SUB(NOW(), INTERVAL 1 MONTH)`
-    );
-    const [conCitas] = await pool.execute(
-      `SELECT COUNT(DISTINCT paciente_id) as total FROM citas WHERE estado IN ('pendiente', 'confirmada')`
-    );
+    // Optimización: Obtener todas las estadísticas en una sola consulta usando subconsultas
+    const [statsRows] = await pool.execute(`
+      SELECT 
+        (SELECT COUNT(*) FROM pacientes) as total,
+        (SELECT COUNT(*) FROM pacientes WHERE estado = 'activo' AND fecha_creacion >= DATE_SUB(NOW(), INTERVAL 30 DAY)) as activos,
+        (SELECT COUNT(*) FROM pacientes WHERE fecha_creacion >= DATE_SUB(NOW(), INTERVAL 1 MONTH)) as nuevos,
+        (SELECT COUNT(DISTINCT paciente_id) FROM citas WHERE estado IN ('pendiente', 'confirmada')) as conCitasPendientes
+    `);
 
     res.json({
       pacientes,
       stats: {
-        total: total[0].total,
-        activos: activos[0].total,
-        nuevos: nuevos[0].total,
-        conCitasPendientes: conCitas[0].total,
+        total: statsRows[0].total,
+        activos: statsRows[0].activos,
+        nuevos: statsRows[0].nuevos,
+        conCitasPendientes: statsRows[0].conCitasPendientes,
       },
     });
   } catch (error) {

@@ -162,6 +162,61 @@ export const appointmentsApi = {
   markAsNoShow: (id: string): Promise<Appointment> => {
     return api.patch<Appointment>(`/citas/${id}/no-show`, {});
   },
+
+  // Export all appointments to CSV
+  exportCSV: async (): Promise<void> => {
+    const token = localStorage.getItem('token');
+    const headers: HeadersInit = {
+      'Content-Type': 'text/csv',
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/citas/exportar`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        if (window.location.pathname !== '/auth') {
+          window.location.href = '/auth';
+        }
+        throw new Error('Sesión expirada. Por favor, inicia sesión nuevamente.');
+      }
+      const error: ApiError = await response.json().catch(() => ({
+        error: 'Error desconocido',
+      }));
+      throw new Error(error.error || 'Error al exportar citas');
+    }
+
+    // Obtener el blob del CSV
+    const blob = await response.blob();
+    
+    // Obtener el nombre del archivo del header Content-Disposition o usar uno por defecto
+    const contentDisposition = response.headers.get('Content-Disposition');
+    let filename = `citas_${new Date().toISOString().split('T')[0]}.csv`;
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+      if (filenameMatch) {
+        filename = filenameMatch[1];
+      }
+    }
+
+    // Crear un enlace temporal y descargar el archivo
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 // RENIEC API interface

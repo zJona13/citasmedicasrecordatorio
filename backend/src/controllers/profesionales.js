@@ -47,25 +47,22 @@ export const getProfesionales = async (req, res) => {
       status: prof.status,
     }));
 
-    // Obtener estadísticas
-    const [total] = await pool.execute('SELECT COUNT(*) as total FROM profesionales');
-    const [disponibles] = await pool.execute(
-      `SELECT COUNT(*) as total FROM profesionales WHERE estado = 'disponible'`
-    );
-    const [especialidades] = await pool.execute(
-      `SELECT COUNT(DISTINCT especialidad_id) as total FROM profesionales`
-    );
-    const [consultorios] = await pool.execute(
-      `SELECT COUNT(DISTINCT consultorio) as total FROM profesionales WHERE consultorio IS NOT NULL`
-    );
+    // Optimización: Obtener todas las estadísticas en una sola consulta usando subconsultas
+    const [statsRows] = await pool.execute(`
+      SELECT 
+        (SELECT COUNT(*) FROM profesionales) as total,
+        (SELECT COUNT(*) FROM profesionales WHERE estado = 'disponible') as disponibles,
+        (SELECT COUNT(DISTINCT especialidad_id) FROM profesionales) as especialidades,
+        (SELECT COUNT(DISTINCT consultorio) FROM profesionales WHERE consultorio IS NOT NULL) as consultoriosActivos
+    `);
 
     res.json({
       profesionales,
       stats: {
-        total: total[0].total,
-        disponibles: disponibles[0].total,
-        especialidades: especialidades[0].total,
-        consultoriosActivos: consultorios[0].total,
+        total: statsRows[0].total,
+        disponibles: statsRows[0].disponibles,
+        especialidades: statsRows[0].especialidades,
+        consultoriosActivos: statsRows[0].consultoriosActivos,
       },
     });
   } catch (error) {
