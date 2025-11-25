@@ -59,21 +59,13 @@ DB_NAME=citasmédicas
 JWT_SECRET=supersecreto
 PUBLIC_URL=http://localhost:3000
 PUBLIC_URL_FRONT=http://localhost:5173
-
-# Twilio Configuration (para SMS/WhatsApp)
-TWILIO_ACCOUNT_SID=your_account_sid
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_PHONE_NUMBER=+1234567890
-TWILIO_WHATSAPP_NUMBER=whatsapp:+1234567890
-TWILIO_DEMO_MODE=true
+WHATSAPP_SESSION_PATH=./whatsapp-session
 CHATBOT_SESSION_TIMEOUT=3600000
 ```
 
 - `PUBLIC_URL` se usa para generar enlaces públicos de la receta
 - `PUBLIC_URL_FRONT` se usa para redirigir a la vista pública del frontend
 - `WHATSAPP_SESSION_PATH` permite persistir la sesión de `whatsapp-web.js`
-- `TOKEN_API_DOCUMENT_MYDEVS` y `KEY_API_DOCUMENT_MYDEVS` se requieren para consultar la información del DNI en RENIEC mediante el servicio de MyDevs.
-- `TWILIO_*` variables para configuración de Twilio (SMS/WhatsApp). `TWILIO_DEMO_MODE=true` evita consumir crédito durante desarrollo.
 - `CHATBOT_SESSION_TIMEOUT` tiempo de expiración de sesión del chatbot en milisegundos (default: 1 hora)
 
 ### Frontend (`frontend/.env`)
