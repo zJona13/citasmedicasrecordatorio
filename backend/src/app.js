@@ -17,6 +17,7 @@ import configuracionesRoutes from './routes/configuraciones.js';
 import sedesRoutes from './routes/sedes.js';
 import notificacionesRoutes from './routes/notificaciones.js';
 import { iniciarJobsNotificaciones } from './services/notifications.js';
+import { inicializarWhatsApp } from './services/whatsapp.js';
 
 dotenv.config();
 
@@ -63,8 +64,18 @@ app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
+  
+  // Inicializar cliente de WhatsApp
+  try {
+    console.log('Inicializando cliente de WhatsApp...');
+    await inicializarWhatsApp();
+  } catch (error) {
+    console.error('Error inicializando WhatsApp:', error);
+    console.log('El servidor continuará funcionando, pero los mensajes de WhatsApp no estarán disponibles hasta que se complete la autenticación.');
+  }
+  
   // Iniciar jobs de notificaciones
   iniciarJobsNotificaciones();
 });

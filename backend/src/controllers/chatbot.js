@@ -33,7 +33,7 @@ export const procesarMensajeChatbot = async (req, res) => {
     }
 
     // Si se proporcionan datos del paciente, guardarlos en la sesión
-    const sesion = obtenerEstadoSesion(sessionId);
+    let sesion = obtenerEstadoSesion(sessionId);
     if (sesion) {
       if (dni) sesion.datos.dni = dni;
       if (nombre) sesion.datos.nombre = nombre;
@@ -42,6 +42,9 @@ export const procesarMensajeChatbot = async (req, res) => {
 
     // Procesar el mensaje
     let respuesta = await procesarMensaje(sessionId, message);
+    
+    // Obtener sesión actualizada después de procesar el mensaje
+    sesion = obtenerEstadoSesion(sessionId);
 
     // Si estamos en estado de recolección de datos, manejar el flujo
     if (sesion && sesion.datos.pendienteDatos && sesion.datos.pendienteDatos.length > 0) {

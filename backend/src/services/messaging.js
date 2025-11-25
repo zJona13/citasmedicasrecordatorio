@@ -1,74 +1,34 @@
 /**
- * Servicio de mensajería para SMS y WhatsApp usando Twilio
+ * Servicio de mensajería para WhatsApp usando whatsapp-web.js
+ * Reemplaza la funcionalidad de SMS con WhatsApp
  */
-import twilio from 'twilio';
 import { pool } from '../db.js';
 import { obtenerConfiguracion } from './configuraciones.js';
+import { enviarMensajeWhatsApp } from './whatsapp.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const DEMO_MODE = process.env.TWILIO_DEMO_MODE === 'true' || !process.env.TWILIO_ACCOUNT_SID;
-
-let twilioClient = null;
-
-if (!DEMO_MODE) {
-  twilioClient = twilio(
-    process.env.TWILIO_ACCOUNT_SID,
-    process.env.TWILIO_AUTH_TOKEN
-  );
-}
-
-const TWILIO_PHONE = process.env.TWILIO_PHONE_NUMBER;
-const TWILIO_WHATSAPP = process.env.TWILIO_WHATSAPP_NUMBER;
+const DEMO_MODE = process.env.WHATSAPP_DEMO_MODE === 'true';
 
 /**
- * Envía un SMS
- * @param {string} to - Número de teléfono destino (formato: +1234567890)
+ * Envía un SMS (ahora usa WhatsApp)
+ * @param {string} to - Número de teléfono destino (formato: +1234567890 o 1234567890)
  * @param {string} message - Mensaje a enviar
  * @returns {Promise<Object>}
  */
 export async function enviarSMS(to, message) {
-  if (DEMO_MODE) {
-    console.log('[DEMO MODE] SMS no enviado:', { to, message });
-    return {
-      success: true,
-      sid: 'demo_sid',
-      mode: 'demo'
-    };
-  }
-
-  try {
-    const result = await twilioClient.messages.create({
-      body: message,
-      from: TWILIO_PHONE,
-      to: to
-    });
-
-    console.log('SMS enviado:', result.sid);
-    return {
-      success: true,
-      sid: result.sid,
-      mode: 'production'
-    };
-  } catch (error) {
-    console.error('Error enviando SMS:', error);
-    throw error;
-  }
+  // Ahora SMS se envía por WhatsApp
+  return await enviarWhatsApp(to, message);
 }
 
 /**
  * Envía un mensaje de WhatsApp
- * @param {string} to - Número de teléfono destino (formato: +1234567890)
+ * @param {string} to - Número de teléfono destino (formato: +1234567890 o 1234567890)
  * @param {string} message - Mensaje a enviar
  * @returns {Promise<Object>}
  */
 export async function enviarWhatsApp(to, message) {
-  // Si WhatsApp no está configurado, lanzar error
-  if (!TWILIO_WHATSAPP) {
-    throw new Error('WhatsApp no está configurado. Configure TWILIO_WHATSAPP_NUMBER en las variables de entorno.');
-  }
-
   if (DEMO_MODE) {
     console.log('[DEMO MODE] WhatsApp no enviado:', { to, message });
     return {
@@ -79,18 +39,8 @@ export async function enviarWhatsApp(to, message) {
   }
 
   try {
-    const result = await twilioClient.messages.create({
-      body: message,
-      from: TWILIO_WHATSAPP,
-      to: `whatsapp:${to}`
-    });
-
-    console.log('WhatsApp enviado:', result.sid);
-    return {
-      success: true,
-      sid: result.sid,
-      mode: 'production'
-    };
+    const result = await enviarMensajeWhatsApp(to, message);
+    return result;
   } catch (error) {
     console.error('Error enviando WhatsApp:', error);
     throw error;
@@ -98,42 +48,34 @@ export async function enviarWhatsApp(to, message) {
 }
 
 /**
- * Envía mensaje por el canal preferido
+ * Envía mensaje por el canal preferido (ahora siempre WhatsApp)
  * @param {string} to - Número de teléfono destino
  * @param {string} message - Mensaje a enviar
- * @param {string} canal - 'SMS' o 'WhatsApp'
+ * @param {string} canal - 'SMS' o 'WhatsApp' (ambos usan WhatsApp ahora)
  * @returns {Promise<Object>}
  */
 export async function enviarMensaje(to, message, canal = 'SMS') {
-  // Si se solicita WhatsApp pero no está configurado, usar SMS como fallback
-  if (canal === 'WhatsApp' && !TWILIO_WHATSAPP) {
-    console.warn('WhatsApp no configurado, usando SMS como fallback');
-    canal = 'SMS';
-  }
-  
-  if (canal === 'WhatsApp') {
-    return await enviarWhatsApp(to, message);
-  }
-  return await enviarSMS(to, message);
+  // Ahora todos los mensajes se envían por WhatsApp
+  return await enviarWhatsApp(to, message);
 }
 
 /**
- * Formatea número de teléfono para Twilio
+ * Formatea número de teléfono para WhatsApp
  * @param {string} telefono - Número de teléfono
- * @returns {string} Número formateado
+ * @returns {string} Número formateado (sin +, solo dígitos con código de país)
  */
 export function formatearTelefono(telefono) {
-  // Remover espacios y caracteres especiales
-  let numero = telefono.replace(/\s+/g, '').replace(/[^\d+]/g, '');
+  // Remover espacios y caracteres especiales, mantener solo dígitos
+  let numero = telefono.replace(/\D/g, '');
   
-  // Si no empieza con +, agregar código de país de Perú (+51)
-  if (!numero.startsWith('+')) {
-    // Si empieza con 0, removerlo
-    if (numero.startsWith('0')) {
-      numero = numero.substring(1);
-    }
-    // Agregar código de país
-    numero = '+51' + numero;
+  // Si empieza con 0, removerlo
+  if (numero.startsWith('0')) {
+    numero = numero.substring(1);
+  }
+  
+  // Si no empieza con código de país de Perú (51), agregarlo
+  if (!numero.startsWith('51')) {
+    numero = '51' + numero;
   }
   
   return numero;

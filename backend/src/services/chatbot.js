@@ -295,7 +295,9 @@ export async function procesarMensaje(sessionId, mensaje) {
         }
       } else if (mensajeNormalizado === 'lista_espera' || mensajeNormalizado.includes('lista') || mensajeNormalizado.includes('espera')) {
         sesion.estado = ESTADOS.TELEFONO;
-        respuesta.mensaje = 'Perfecto. Para agregarlo a la lista de espera, necesito su número de teléfono. ¿Cuál es su número?';
+        respuesta.mensaje = 'Perfecto. Para agregarlo a la lista de espera, necesito algunos datos:\n\n1. ¿Cuál es su número de DNI?';
+        sesion.datos.pendienteDatos = ['dni', 'nombre', 'telefono'];
+        sesion.datos.esListaEspera = true;
       } else if (mensajeNormalizado === 'cancelar' || mensajeNormalizado.includes('no') || mensajeNormalizado.includes('salir')) {
         respuesta.mensaje = 'Entendido. Si cambia de opinión, puede volver a iniciar el proceso. ¡Que tenga un buen día!';
         respuesta.finalizado = true;
