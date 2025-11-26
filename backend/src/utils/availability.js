@@ -15,16 +15,16 @@ function generarSlots(horaInicio, horaFin, intervaloMinutos = 30) {
   const slots = [];
   const [hInicio, mInicio] = horaInicio.split(':').map(Number);
   const [hFin, mFin] = horaFin.split(':').map(Number);
-  
+
   const inicioMinutos = hInicio * 60 + mInicio;
   const finMinutos = hFin * 60 + mFin;
-  
+
   for (let minutos = inicioMinutos; minutos < finMinutos; minutos += intervaloMinutos) {
     const horas = Math.floor(minutos / 60);
     const mins = minutos % 60;
     slots.push(`${String(horas).padStart(2, '0')}:${String(mins).padStart(2, '0')}`);
   }
-  
+
   return slots;
 }
 
@@ -46,7 +46,7 @@ async function obtenerCitasOcupadas(profesionalId, fechaInicio, fechaFin) {
      ORDER BY fecha, hora`,
     [profesionalId, fechaInicio, fechaFin]
   );
-  
+
   return rows.map(row => ({
     fecha: row.fecha.toISOString().split('T')[0],
     hora: row.hora.substring(0, 5) // Formato HH:MM
@@ -66,51 +66,51 @@ export async function calcularDisponibilidadSemanal(profesionalId, fechaInicio, 
     `SELECT id, horario FROM profesionales WHERE id = ?`,
     [profesionalId]
   );
-  
+
   if (profesionalRows.length === 0) {
     throw new Error('Profesional no encontrado');
   }
-  
+
   const horarioProfesional = profesionalRows[0].horario;
   let horarioObj = null;
-  
+
   if (horarioProfesional) {
     try {
-      horarioObj = typeof horarioProfesional === 'string' 
-        ? JSON.parse(horarioProfesional) 
+      horarioObj = typeof horarioProfesional === 'string'
+        ? JSON.parse(horarioProfesional)
         : horarioProfesional;
     } catch (e) {
       console.error('Error parsing horario:', e);
     }
   }
-  
+
   // Calcular fecha de fin (7 días después)
   const fechaInicioObj = new Date(fechaInicio + 'T00:00:00');
   const fechaFinObj = new Date(fechaInicioObj);
   fechaFinObj.setDate(fechaFinObj.getDate() + 6);
   const fechaFin = fechaFinObj.toISOString().split('T')[0];
-  
+
   // Obtener citas ocupadas
   const citasOcupadas = await obtenerCitasOcupadas(profesionalId, fechaInicio, fechaFin);
-  
+
   // Crear mapa de citas ocupadas para búsqueda rápida
   const citasMap = new Map();
   citasOcupadas.forEach(cita => {
     const key = `${cita.fecha}_${cita.hora}`;
     citasMap.set(key, true);
   });
-  
+
   // Calcular disponibilidad día por día
   const disponibilidad = {};
   let totalDisponibles = 0;
   let diasConDisponibilidad = 0;
-  
+
   for (let i = 0; i < 7; i++) {
     const fechaActual = new Date(fechaInicioObj);
     fechaActual.setDate(fechaActual.getDate() + i);
     const fechaStr = fechaActual.toISOString().split('T')[0];
     const diaSemana = obtenerDiaSemana(fechaStr);
-    
+
     // Si no hay horario configurado para este día, no hay disponibilidad
     if (!horarioObj || !horarioObj[diaSemana]) {
       disponibilidad[fechaStr] = {
@@ -121,16 +121,37 @@ export async function calcularDisponibilidadSemanal(profesionalId, fechaInicio, 
       };
       continue;
     }
-    
+
     const horarioDia = horarioObj[diaSemana];
     const slots = generarSlots(horarioDia.inicio, horarioDia.fin, intervaloMinutos);
-    
-    // Filtrar slots ocupados
+
+    // Filtrar slots ocupados y pasados
     const slotsDisponibles = slots.filter(slot => {
       const key = `${fechaStr}_${slot}`;
+
+      // Verificar si es pasado
+      const ahora = new Date();
+      const fechaSlot = new Date(`${fechaStr}T${slot}:00`);
+
+      // Ajustar fechaSlot con la zona horaria local si es necesario, 
+      // pero como fechaStr viene de ISO string y slot es HH:MM, 
+      // new Date() creará objeto en zona local.
+      // Sin embargo, fechaStr viene de .toISOString().split('T')[0] que es UTC.
+      // Mejor comparar timestamps.
+
+      // Construir fecha del slot correctamente
+      // fechaStr es YYYY-MM-DD
+      const [year, month, day] = fechaStr.split('-').map(Number);
+      const [hour, minute] = slot.split(':').map(Number);
+      const slotDate = new Date(year, month - 1, day, hour, minute);
+
+      if (slotDate < ahora) {
+        return false;
+      }
+
       return !citasMap.has(key);
     });
-    
+
     disponibilidad[fechaStr] = {
       dia: diaSemana,
       disponible: slotsDisponibles.length > 0,
@@ -140,13 +161,13 @@ export async function calcularDisponibilidadSemanal(profesionalId, fechaInicio, 
         fin: horarioDia.fin
       }
     };
-    
+
     if (slotsDisponibles.length > 0) {
       totalDisponibles += slotsDisponibles.length;
       diasConDisponibilidad++;
     }
   }
-  
+
   return {
     fechaInicio,
     fechaFin,
@@ -179,19 +200,19 @@ export async function estaSemanaCompleta(profesionalId, fechaInicio) {
  */
 export async function obtenerSiguienteSemanaDisponible(profesionalId, fechaInicio, maxSemanas = 4) {
   const fechaInicioObj = new Date(fechaInicio + 'T00:00:00');
-  
+
   for (let i = 1; i <= maxSemanas; i++) {
     const fechaSiguiente = new Date(fechaInicioObj);
     fechaSiguiente.setDate(fechaSiguiente.getDate() + (i * 7));
     const fechaSiguienteStr = fechaSiguiente.toISOString().split('T')[0];
-    
+
     const disponibilidad = await calcularDisponibilidadSemanal(profesionalId, fechaSiguienteStr);
-    
+
     if (!disponibilidad.resumen.semanaCompleta) {
       return disponibilidad;
     }
   }
-  
+
   return null;
 }
 

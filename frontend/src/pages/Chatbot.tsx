@@ -6,12 +6,8 @@ export default function Chatbot() {
   const [sessionId, setSessionId] = useState<string>("");
 
   useEffect(() => {
-    // Generar o recuperar sessionId
-    let id = localStorage.getItem("chatbot_session_id");
-    if (!id) {
-      id = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      localStorage.setItem("chatbot_session_id", id);
-    }
+    // Generar nuevo sessionId en cada carga
+    const id = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     setSessionId(id);
   }, []);
 
