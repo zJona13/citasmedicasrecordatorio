@@ -104,14 +104,15 @@ export function iniciarJobRecordatorios24h() {
  * Se ejecuta cada 15 minutos
  */
 export function iniciarJobConfirmaciones3h() {
-  cron.schedule('*/15 * * * *', async () => {
+  cron.schedule('* * * * *', async () => {
     console.log('Ejecutando job de confirmaciones 3h...');
     
     try {
       // Obtener canal preferido
       const canalPreferido = await obtenerConfiguracion('canal_preferido');
       
-      // Buscar citas pendientes que están en las próximas 3 horas
+      // Buscar citas pendientes que están en las próximas 3 horas (exactas)
+      // Se busca citas cuya hora sea entre NOW()+3h y NOW()+3h+1m
       const [citas] = await pool.execute(
         `SELECT 
           c.id,
@@ -129,14 +130,13 @@ export function iniciarJobConfirmaciones3h() {
          WHERE c.estado = 'pendiente'
          AND c.fecha = CURDATE()
          AND TIME(c.hora) BETWEEN ADDTIME(TIME(NOW()), '03:00:00')
-                              AND ADDTIME(TIME(NOW()), '03:15:00')
+                              AND ADDTIME(TIME(NOW()), '03:01:00')
          AND pa.telefono IS NOT NULL
          AND NOT EXISTS (
            SELECT 1 FROM confirmaciones conf
            WHERE conf.cita_id = c.id
            AND conf.canal IN ('SMS', 'WhatsApp')
            AND DATE(conf.fecha_envio) = CURDATE()
-           AND HOUR(conf.fecha_envio) = HOUR(NOW())
            AND conf.estado_envio = 'entregado'
          )`
       );

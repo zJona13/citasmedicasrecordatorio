@@ -67,17 +67,17 @@ export async function enviarMensaje(to, message, canal = 'SMS') {
 export function formatearTelefono(telefono) {
   // Remover espacios y caracteres especiales, mantener solo dígitos
   let numero = telefono.replace(/\D/g, '');
-  
+
   // Si empieza con 0, removerlo
   if (numero.startsWith('0')) {
     numero = numero.substring(1);
   }
-  
+
   // Si no empieza con código de país de Perú (51), agregarlo
   if (!numero.startsWith('51')) {
     numero = '51' + numero;
   }
-  
+
   return numero;
 }
 
@@ -89,21 +89,21 @@ export function formatearTelefono(telefono) {
  */
 export function reemplazarVariables(plantilla, datos) {
   let mensaje = plantilla;
-  
+
   // Formatear fecha
-  const fechaFormateada = datos.fecha 
+  const fechaFormateada = datos.fecha
     ? new Date(datos.fecha).toLocaleDateString('es-PE', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      })
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })
     : '';
-  
+
   // Formatear hora
-  const horaFormateada = datos.hora 
+  const horaFormateada = datos.hora
     ? datos.hora.substring(0, 5)
     : '';
-  
+
   // Reemplazar variables
   mensaje = mensaje.replace(/{nombre}/g, datos.nombre || datos.patient || '');
   mensaje = mensaje.replace(/{fecha}/g, fechaFormateada);
@@ -111,7 +111,7 @@ export function reemplazarVariables(plantilla, datos) {
   mensaje = mensaje.replace(/{especialidad}/g, datos.especialidad || datos.specialty || '');
   mensaje = mensaje.replace(/{doctor}/g, datos.doctor || '');
   mensaje = mensaje.replace(/{tiempo}/g, datos.tiempo || datos.minutosExpiracion || '30');
-  
+
   return mensaje;
 }
 
@@ -124,7 +124,7 @@ export function templateRecordatorio24h(cita) {
     month: '2-digit',
     year: 'numeric'
   });
-  
+
   return `Recordatorio: Cita el ${fecha} a las ${cita.hora.substring(0, 5)} con ${cita.doctor}. Confirme su asistencia.`;
 }
 
@@ -134,10 +134,12 @@ export function templateRecordatorio24h(cita) {
 export function templateConfirmacion3h(cita) {
   const fecha = new Date(cita.fecha).toLocaleDateString('es-PE', {
     day: '2-digit',
-    month: '2-digit'
+    month: '2-digit',
+    year: 'numeric'
   });
-  
-  return `Confirme su cita: ${fecha} ${cita.hora.substring(0, 5)} con ${cita.doctor}. Responda CONFIRMAR o CANCELAR.`;
+
+  // "La cita del dia tal, a la hora tal con el medico tal del area tal, escriba 'CONFIRMAR' para confirmar o ignore el mensaje."
+  return `La cita del ${fecha} a las ${cita.hora.substring(0, 5)} con el Dr. ${cita.doctor} del área ${cita.specialty || cita.especialidad || 'General'}, escriba 'CONFIRMAR' para confirmar o ignore el mensaje.`;
 }
 
 /**
@@ -148,7 +150,7 @@ export function templateConfirmacionManual(cita) {
     day: '2-digit',
     month: '2-digit'
   });
-  
+
   return `Cita confirmada: ${fecha} ${cita.hora.substring(0, 5)} con ${cita.doctor}. Llegue 10 min antes. Hospital Luis Heysen II.`;
 }
 
@@ -173,19 +175,20 @@ export async function templateOfertaListaEspera(cita, minutosExpiracion = 15) {
   } catch (error) {
     console.warn('Error obteniendo plantilla personalizada, usando plantilla por defecto:', error);
   }
-  
+
   // Plantilla por defecto
   const fecha = new Date(cita.fecha).toLocaleDateString('es-PE', {
     day: '2-digit',
-    month: '2-digit'
+    month: '2-digit',
+    year: 'numeric'
   });
-  
+
   // Acortar nombre del doctor si es muy largo
-  const doctorNombre = cita.doctor.length > 25 
-    ? cita.doctor.split(' ').slice(0, 2).join(' ') 
+  const doctorNombre = cita.doctor.length > 25
+    ? cita.doctor.split(' ').slice(0, 2).join(' ')
     : cita.doctor;
-  
-  return `Espacio disponible: ${fecha} ${cita.hora.substring(0, 5)} con ${doctorNombre}. Responda ACEPTAR en ${minutosExpiracion} min o IGNORAR.`;
+
+  return `Hola ${cita.patient || ''}, hay un cupo disponible el ${fecha} a las ${cita.hora.substring(0, 5)} con el Dr. ${doctorNombre}. Escriba 'ACEPTAR' para reservar la cita o 'IGNORAR' para rechazarla. Tiene ${minutosExpiracion} minutos.`;
 }
 
 /**
@@ -216,7 +219,7 @@ export async function enviarRecordatorio24h(cita, canal = 'SMS') {
     return resultado;
   } catch (error) {
     console.error('Error enviando recordatorio 24h:', error);
-    
+
     // Registrar fallo
     try {
       await pool.execute(
@@ -260,7 +263,7 @@ export async function enviarConfirmacion3h(cita, canal = 'SMS') {
     return resultado;
   } catch (error) {
     console.error('Error enviando confirmación 3h:', error);
-    
+
     // Registrar fallo
     try {
       await pool.execute(
@@ -323,7 +326,7 @@ export async function enviarConfirmacionManual(cita, canal = 'SMS') {
     return resultado;
   } catch (error) {
     console.error('Error enviando confirmación manual:', error);
-    
+
     // Registrar fallo
     try {
       await pool.execute(
@@ -385,12 +388,12 @@ export async function enviarOfertaListaEspera(cita, paciente, canal = 'SMS', min
  */
 export async function procesarRespuestaConfirmacion(telefono, mensaje) {
   const mensajeNormalizado = mensaje.trim().toUpperCase();
-  
+
   // Limpiar número de teléfono (remover caracteres especiales y prefijos)
   const telefonoLimpio = telefono.replace(/\D/g, '');
   // Si tiene código de país, removerlo para búsqueda
   const telefonoBusqueda = telefonoLimpio.length > 9 ? telefonoLimpio.slice(-9) : telefonoLimpio;
-  
+
   // Buscar cita pendiente de confirmación para este teléfono
   const [citas] = await pool.execute(
     `SELECT c.id, c.estado, c.fecha, c.hora, 
