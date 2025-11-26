@@ -26,13 +26,19 @@ export async function inicializarWhatsApp() {
 
   if (isInitializing) {
     // Esperar a que termine la inicialización
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const checkInterval = setInterval(() => {
         if (isReady && whatsappClient) {
           clearInterval(checkInterval);
           resolve(whatsappClient);
         }
       }, 500);
+      
+      // Timeout después de 2 minutos
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        reject(new Error('Timeout esperando inicialización de WhatsApp'));
+      }, 120000);
     });
   }
 
@@ -41,6 +47,16 @@ export async function inicializarWhatsApp() {
   try {
     // Configurar ruta de sesión si está definida
     const sessionPath = process.env.WHATSAPP_SESSION_PATH || './.wwebjs_auth';
+    
+    // Limpiar cliente anterior si existe pero no está listo
+    if (whatsappClient) {
+      try {
+        await whatsappClient.destroy();
+      } catch (e) {
+        // Ignorar errores al destruir
+      }
+      whatsappClient = null;
+    }
     
     whatsappClient = new Client({
       authStrategy: new LocalAuth({
@@ -56,8 +72,30 @@ export async function inicializarWhatsApp() {
           '--no-first-run',
           '--no-zygote',
           '--single-process',
-          '--disable-gpu'
-        ]
+          '--disable-gpu',
+          '--disable-extensions',
+          '--disable-background-networking',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-breakpad',
+          '--disable-client-side-phishing-detection',
+          '--disable-default-apps',
+          '--disable-features=TranslateUI',
+          '--disable-hang-monitor',
+          '--disable-ipc-flooding-protection',
+          '--disable-popup-blocking',
+          '--disable-prompt-on-repost',
+          '--disable-renderer-backgrounding',
+          '--disable-sync',
+          '--metrics-recording-only',
+          '--no-default-browser-check',
+          '--no-first-run',
+          '--safebrowsing-disable-auto-update',
+          '--enable-automation',
+          '--password-store=basic',
+          '--use-mock-keychain'
+        ],
+        timeout: 60000 // 60 segundos de timeout para la inicialización
       }
     });
 
@@ -143,31 +181,67 @@ export async function inicializarWhatsApp() {
     whatsappClient.on('auth_failure', (msg) => {
       console.error('❌ Error de autenticación de WhatsApp:', msg);
       isInitializing = false;
+      isReady = false;
+      whatsappClient = null;
     });
 
     // Evento de desconexión
     whatsappClient.on('disconnected', (reason) => {
       console.log('⚠️ WhatsApp desconectado:', reason);
       isReady = false;
+      const oldClient = whatsappClient;
       whatsappClient = null;
       
       // Intentar reconectar después de 5 segundos
       setTimeout(() => {
-        if (!isInitializing) {
+        if (!isInitializing && !whatsappClient) {
           console.log('🔄 Intentando reconectar WhatsApp...');
-          inicializarWhatsApp();
+          inicializarWhatsApp().catch(err => {
+            console.error('❌ Error al intentar reconectar:', err);
+          });
         }
       }, 5000);
     });
 
-    // Inicializar el cliente
-    await whatsappClient.initialize();
+    // Evento de loading screen
+    whatsappClient.on('loading_screen', (percent, message) => {
+      console.log(`⏳ Cargando WhatsApp: ${percent}% - ${message}`);
+    });
+
+    // Inicializar el cliente con timeout
+    console.log('🔄 Iniciando cliente de WhatsApp...');
+    const initPromise = whatsappClient.initialize();
+    
+    // Agregar timeout de 60 segundos
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Timeout: La inicialización de WhatsApp tomó más de 60 segundos'));
+      }, 60000);
+    });
+
+    await Promise.race([initPromise, timeoutPromise]);
+    
+    console.log('✅ Cliente de WhatsApp inicializado exitosamente');
 
     return whatsappClient;
   } catch (error) {
     console.error('❌ Error inicializando WhatsApp:', error);
     isInitializing = false;
-    throw error;
+    isReady = false;
+    
+    // Limpiar el cliente si existe
+    if (whatsappClient) {
+      try {
+        await whatsappClient.destroy();
+      } catch (e) {
+        // Ignorar errores al destruir
+      }
+      whatsappClient = null;
+    }
+    
+    // No lanzar el error, solo loguearlo para que el servidor continúe
+    // El servidor puede funcionar sin WhatsApp
+    return null;
   }
 }
 

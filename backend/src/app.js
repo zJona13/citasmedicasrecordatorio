@@ -67,14 +67,19 @@ app.use((req, res) => {
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
   
-  // Inicializar cliente de WhatsApp
-  try {
-    console.log('Inicializando cliente de WhatsApp...');
-    await inicializarWhatsApp();
-  } catch (error) {
-    console.error('Error inicializando WhatsApp:', error);
-    console.log('El servidor continuará funcionando, pero los mensajes de WhatsApp no estarán disponibles hasta que se complete la autenticación.');
-  }
+  // Inicializar cliente de WhatsApp (en background para no bloquear)
+  inicializarWhatsApp()
+    .then((client) => {
+      if (client) {
+        console.log('✅ WhatsApp inicializado correctamente');
+      } else {
+        console.log('⚠️ WhatsApp no se pudo inicializar, pero el servidor continuará funcionando');
+      }
+    })
+    .catch((error) => {
+      console.error('❌ Error inicializando WhatsApp:', error.message || error);
+      console.log('ℹ️ El servidor continuará funcionando, pero los mensajes de WhatsApp no estarán disponibles hasta que se complete la autenticación.');
+    });
   
   // Iniciar jobs de notificaciones
   iniciarJobsNotificaciones();
