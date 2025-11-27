@@ -115,6 +115,12 @@ export function iniciarJobConfirmaciones3h() {
       const now = new Date();
       const targetTime = new Date(now.getTime() + 3 * 60 * 60 * 1000); // +3 horas
 
+      // Calcular la FECHA objetivo (puede ser hoy o mañana si cruza medianoche)
+      const targetYear = targetTime.getFullYear();
+      const targetMonth = (targetTime.getMonth() + 1).toString().padStart(2, '0');
+      const targetDay = targetTime.getDate().toString().padStart(2, '0');
+      const targetDate = `${targetYear}-${targetMonth}-${targetDay}`;
+
       // Formatear hora inicio ventana (HH:mm:00)
       const startHour = targetTime.getHours().toString().padStart(2, '0');
       const startMinute = targetTime.getMinutes().toString().padStart(2, '0');
@@ -123,9 +129,9 @@ export function iniciarJobConfirmaciones3h() {
       // Formatear hora fin ventana (HH:mm:59) - ventana de 1 minuto
       const windowEnd = `${startHour}:${startMinute}:59`;
 
-      console.log(`Buscando citas para ${windowStart} - ${windowEnd} (fecha hoy según DB)`);
+      console.log(`Buscando citas para ${targetDate} entre ${windowStart} - ${windowEnd}`);
 
-      // Usar executeWithPeru para que CURDATE() funcione en timezone Peru
+      // Usar executeWithPeru con fecha calculada en JS
       const [citas] = await executeWithPeru(
         `SELECT c.id, c.fecha, c.hora, c.estado, 
                 pa.nombre_completo as patient, pa.telefono, 
@@ -135,17 +141,17 @@ export function iniciarJobConfirmaciones3h() {
          JOIN profesionales pr ON c.profesional_id = pr.id
          JOIN especialidades e ON pr.especialidad_id = e.id
          WHERE c.estado = 'pendiente'
-         AND c.fecha = CURDATE()
+         AND c.fecha = ?
          AND c.hora BETWEEN ? AND ?
          AND pa.telefono IS NOT NULL
          AND NOT EXISTS (
            SELECT 1 FROM confirmaciones conf
            WHERE conf.cita_id = c.id
            AND conf.canal IN ('SMS', 'WhatsApp')
-           AND DATE(conf.fecha_envio) = CURDATE()
+           AND DATE(conf.fecha_envio) = ?
            AND conf.estado_envio = 'entregado'
          )`,
-        [windowStart, windowEnd]
+        [targetDate, windowStart, windowEnd, targetDate]
       );
 
       console.log(`Encontradas ${citas.length} citas para confirmación 3h`);
