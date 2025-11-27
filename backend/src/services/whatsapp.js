@@ -149,13 +149,23 @@ export async function inicializarWhatsApp() {
         }
 
         // Intentar procesar como confirmación de cita (CONFIRMAR/CANCELAR)
+        console.log('🔄 Procesando como confirmación de cita...');
         const resultadoConfirmacion = await procesarRespuestaConfirmacion(numero, cuerpo);
+        console.log('✅ Resultado confirmación:', resultadoConfirmacion);
+        
         if (resultadoConfirmacion.success) {
           const mensajeRespuesta = resultadoConfirmacion.cita.respuesta === 'confirmada' 
             ? 'Su cita ha sido confirmada. ¡Nos vemos pronto!' 
             : 'Su cita ha sido cancelada.';
           await message.reply(mensajeRespuesta);
+          console.log(`✅ Mensaje de confirmación enviado a ${numero}`);
           return;
+        } else {
+          console.log(`⚠️ No se pudo procesar confirmación: ${resultadoConfirmacion.error}`);
+          // Si hay un error, informar al usuario
+          if (resultadoConfirmacion.error) {
+            await message.reply(resultadoConfirmacion.error || 'No se pudo procesar su respuesta.');
+          }
         }
 
         // Si no es confirmación de cita ni lista de espera, no procesar

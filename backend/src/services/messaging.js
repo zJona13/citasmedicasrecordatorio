@@ -387,69 +387,133 @@ export async function enviarOfertaListaEspera(cita, paciente, canal = 'SMS', min
  * @returns {Promise<Object>}
  */
 export async function procesarRespuestaConfirmacion(telefono, mensaje) {
-  const mensajeNormalizado = mensaje.trim().toUpperCase();
+  try {
+    const mensajeNormalizado = mensaje.trim().toUpperCase();
+    console.log(`[CONFIRMACIÓN] Procesando respuesta: "${mensajeNormalizado}" de teléfono: ${telefono}`);
 
-  // Limpiar número de teléfono (remover caracteres especiales y prefijos)
-  const telefonoLimpio = telefono.replace(/\D/g, '');
-  // Si tiene código de país, removerlo para búsqueda
-  const telefonoBusqueda = telefonoLimpio.length > 9 ? telefonoLimpio.slice(-9) : telefonoLimpio;
+    // Limpiar número de teléfono (remover caracteres especiales y prefijos)
+    const telefonoLimpio = telefono.replace(/\D/g, '');
+    // Si tiene código de país, removerlo para búsqueda (últimos 9 dígitos para números peruanos)
+    const telefonoBusqueda = telefonoLimpio.length > 9 ? telefonoLimpio.slice(-9) : telefonoLimpio;
+    // También buscar con el número completo si es más corto
+    const telefonoBusquedaCompleto = telefonoLimpio;
+    console.log(`[CONFIRMACIÓN] Teléfono original: ${telefono}, limpio: ${telefonoLimpio}, búsqueda (9 dígitos): ${telefonoBusqueda}, completo: ${telefonoBusquedaCompleto}`);
 
-  // Buscar cita pendiente de confirmación para este teléfono
-  const [citas] = await pool.execute(
-    `SELECT c.id, c.estado, c.fecha, c.hora, 
-            pa.nombre_completo, pr.nombre_completo as doctor, e.nombre as specialty
-     FROM citas c
-     INNER JOIN pacientes pa ON c.paciente_id = pa.id
-     INNER JOIN profesionales pr ON c.profesional_id = pr.id
-     INNER JOIN especialidades e ON pr.especialidad_id = e.id
-     WHERE REPLACE(REPLACE(pa.telefono, ' ', ''), '-', '') LIKE ? 
-     AND c.estado = 'pendiente'
-     AND c.fecha >= CURDATE()
-     ORDER BY c.fecha ASC, c.hora ASC
-     LIMIT 1`,
-    [`%${telefonoBusqueda}%`]
-  );
+    // Buscar cita pendiente de confirmación para este teléfono
+    // Intentar primero con los últimos 9 dígitos, luego con el número completo
+    let [citas] = await pool.execute(
+      `SELECT c.id, c.estado, c.fecha, c.hora, 
+              pa.nombre_completo, pr.nombre_completo as doctor, e.nombre as specialty,
+              pa.telefono as telefono_paciente
+       FROM citas c
+       INNER JOIN pacientes pa ON c.paciente_id = pa.id
+       INNER JOIN profesionales pr ON c.profesional_id = pr.id
+       INNER JOIN especialidades e ON pr.especialidad_id = e.id
+       WHERE REPLACE(REPLACE(REPLACE(pa.telefono, ' ', ''), '-', ''), '+', '') LIKE ? 
+       AND c.estado = 'pendiente'
+       AND c.fecha >= CURDATE()
+       ORDER BY c.fecha ASC, c.hora ASC
+       LIMIT 1`,
+      [`%${telefonoBusqueda}%`]
+    );
 
-  if (citas.length === 0) {
-    return { success: false, error: 'No se encontró cita pendiente' };
-  }
-
-  const cita = citas[0];
-  let respuesta = 'pendiente';
-  let estadoCita = cita.estado;
-
-  if (mensajeNormalizado.includes('CONFIRMAR') || mensajeNormalizado.includes('SI') || mensajeNormalizado === 'S') {
-    respuesta = 'confirmada';
-    estadoCita = 'confirmada';
-  } else if (mensajeNormalizado.includes('CANCELAR') || mensajeNormalizado.includes('NO') || mensajeNormalizado === 'N') {
-    respuesta = 'rechazada';
-    estadoCita = 'cancelada';
-  } else {
-    return { success: false, error: 'Respuesta no reconocida. Responda CONFIRMAR o CANCELAR.' };
-  }
-
-  // Actualizar cita y confirmación
-  await pool.execute(
-    `UPDATE citas SET estado = ? WHERE id = ?`,
-    [estadoCita, cita.id]
-  );
-
-  await pool.execute(
-    `UPDATE confirmaciones 
-     SET respuesta = ?, fecha_respuesta = NOW() 
-     WHERE cita_id = ? 
-     AND respuesta = 'pendiente'
-     ORDER BY fecha_envio DESC LIMIT 1`,
-    [respuesta, cita.id]
-  );
-
-  return {
-    success: true,
-    cita: {
-      id: cita.id,
-      estado: estadoCita,
-      respuesta
+    // Si no se encontró con 9 dígitos, intentar con el número completo
+    if (citas.length === 0 && telefonoBusquedaCompleto !== telefonoBusqueda) {
+      console.log(`[CONFIRMACIÓN] No se encontró con 9 dígitos, intentando con número completo...`);
+      [citas] = await pool.execute(
+        `SELECT c.id, c.estado, c.fecha, c.hora, 
+                pa.nombre_completo, pr.nombre_completo as doctor, e.nombre as specialty,
+                pa.telefono as telefono_paciente
+         FROM citas c
+         INNER JOIN pacientes pa ON c.paciente_id = pa.id
+         INNER JOIN profesionales pr ON c.profesional_id = pr.id
+         INNER JOIN especialidades e ON pr.especialidad_id = e.id
+         WHERE REPLACE(REPLACE(REPLACE(pa.telefono, ' ', ''), '-', ''), '+', '') LIKE ? 
+         AND c.estado = 'pendiente'
+         AND c.fecha >= CURDATE()
+         ORDER BY c.fecha ASC, c.hora ASC
+         LIMIT 1`,
+        [`%${telefonoBusquedaCompleto}%`]
+      );
     }
-  };
+
+    console.log(`[CONFIRMACIÓN] Citas encontradas: ${citas.length}`);
+    if (citas.length > 0) {
+      console.log(`[CONFIRMACIÓN] Cita encontrada: ID=${citas[0].id}, Estado=${citas[0].estado}, Teléfono=${citas[0].telefono_paciente}`);
+    }
+
+    if (citas.length === 0) {
+      console.log(`[CONFIRMACIÓN] No se encontró cita pendiente para teléfono: ${telefonoBusqueda}`);
+      return { success: false, error: 'No se encontró cita pendiente' };
+    }
+
+    const cita = citas[0];
+    let respuesta = 'pendiente';
+    let estadoCita = cita.estado;
+
+    if (mensajeNormalizado.includes('CONFIRMAR') || mensajeNormalizado.includes('SI') || mensajeNormalizado === 'S') {
+      respuesta = 'confirmada';
+      estadoCita = 'confirmada';
+      console.log(`[CONFIRMACIÓN] Confirmando cita ID: ${cita.id}`);
+    } else if (mensajeNormalizado.includes('CANCELAR') || mensajeNormalizado.includes('NO') || mensajeNormalizado === 'N') {
+      respuesta = 'rechazada';
+      estadoCita = 'cancelada';
+      console.log(`[CONFIRMACIÓN] Cancelando cita ID: ${cita.id}`);
+    } else {
+      console.log(`[CONFIRMACIÓN] Respuesta no reconocida: "${mensajeNormalizado}"`);
+      return { success: false, error: 'Respuesta no reconocida. Responda CONFIRMAR o CANCELAR.' };
+    }
+
+    // Actualizar cita y confirmación
+    console.log(`[CONFIRMACIÓN] Actualizando cita ID: ${cita.id} a estado: ${estadoCita}`);
+    const [resultadoCita] = await pool.execute(
+      `UPDATE citas SET estado = ? WHERE id = ?`,
+      [estadoCita, cita.id]
+    );
+    console.log(`[CONFIRMACIÓN] Resultado actualización cita:`, {
+      affectedRows: resultadoCita.affectedRows,
+      changedRows: resultadoCita.changedRows
+    });
+
+    if (resultadoCita.affectedRows === 0) {
+      console.error(`[CONFIRMACIÓN] ERROR: No se pudo actualizar la cita ID: ${cita.id}`);
+      return { success: false, error: 'No se pudo actualizar el estado de la cita' };
+    }
+
+    const [resultadoConfirmacion] = await pool.execute(
+      `UPDATE confirmaciones 
+       SET respuesta = ?, fecha_respuesta = NOW() 
+       WHERE cita_id = ? 
+       AND respuesta = 'pendiente'
+       ORDER BY fecha_envio DESC LIMIT 1`,
+      [respuesta, cita.id]
+    );
+    console.log(`[CONFIRMACIÓN] Resultado actualización confirmación:`, {
+      affectedRows: resultadoConfirmacion.affectedRows,
+      changedRows: resultadoConfirmacion.changedRows
+    });
+
+    // Verificar que la actualización fue exitosa
+    const [citaVerificada] = await pool.execute(
+      `SELECT estado FROM citas WHERE id = ?`,
+      [cita.id]
+    );
+
+    if (citaVerificada.length > 0) {
+      console.log(`[CONFIRMACIÓN] Estado verificado de cita ID ${cita.id}: ${citaVerificada[0].estado}`);
+    }
+
+    return {
+      success: true,
+      cita: {
+        id: cita.id,
+        estado: estadoCita,
+        respuesta
+      }
+    };
+  } catch (error) {
+    console.error(`[CONFIRMACIÓN] ERROR al procesar respuesta:`, error);
+    return { success: false, error: `Error al procesar la confirmación: ${error.message}` };
+  }
 }
 
