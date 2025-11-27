@@ -593,7 +593,7 @@ INSERT INTO configuraciones (clave, valor, tipo, descripcion) VALUES
 ('prioridad_urgentes', 'true', 'boolean', 'Priorizar casos urgentes'),
 ('prioridad_tiempo_espera', 'false', 'boolean', 'Priorizar por mayor tiempo de espera'),
 ('mensaje_confirmacion', 'Hola {nombre}, tienes cita el {fecha} a las {hora} en {especialidad}. Confirma respondiendo SÍ.', 'string', 'Plantilla de mensaje de confirmación'),
-('mensaje_oferta_cupo', 'Hola {nombre}, hay un cupo disponible el {fecha} a las {hora}. ¿Lo aceptas? Responde en {tiempo} min.', 'string', 'Plantilla de mensaje de oferta de cupo'),
+('mensaje_oferta_cupo', 'Hola {nombre}, hay un cupo disponible el {fecha} a las {hora} con el Dr. {doctor}. Escriba ''ACEPTAR'' para reservar la cita o ''IGNORAR'' para rechazarla. Tiene {tiempo} minutos.', 'string', 'Plantilla de mensaje de oferta de cupo'),
 ('chatbot_enabled', 'true', 'boolean', 'Habilitar chatbot'),
 ('chatbot_greeting', 'Hola! Soy tu asistente virtual de EsSalud. ¿En qué puedo ayudarte?', 'string', 'Mensaje de bienvenida del chatbot'),
 ('dark_mode_enabled', 'false', 'boolean', 'Habilitar modo oscuro')

@@ -15,7 +15,7 @@ import { obtenerConfiguracion } from './configuraciones.js';
 export function iniciarJobRecordatorios24h() {
   cron.schedule('0 * * * *', async () => {
     console.log('Ejecutando job de recordatorios 24h...');
-    
+
     try {
       // Verificar si el recordatorio 24h está habilitado
       const reminder24hEnabled = await obtenerConfiguracion('reminder_24h_enabled');
@@ -26,7 +26,7 @@ export function iniciarJobRecordatorios24h() {
 
       // Obtener canal preferido
       const canalPreferido = await obtenerConfiguracion('canal_preferido');
-      
+
       // Buscar citas que están en las próximas 24 horas
       const [citas] = await pool.execute(
         `SELECT 
@@ -75,7 +75,7 @@ export function iniciarJobRecordatorios24h() {
             }, 'SMS');
             canal = 'WhatsApp';
           }
-          
+
           await enviarRecordatorio24h({
             id: cita.id,
             fecha: cita.fecha.toISOString().split('T')[0],
@@ -106,31 +106,36 @@ export function iniciarJobRecordatorios24h() {
 export function iniciarJobConfirmaciones3h() {
   cron.schedule('* * * * *', async () => {
     console.log('Ejecutando job de confirmaciones 3h...');
-    
+
     try {
       // Obtener canal preferido
       const canalPreferido = await obtenerConfiguracion('canal_preferido');
-      
-      // Buscar citas pendientes que están en las próximas 3 horas (exactas)
-      // Se busca citas cuya hora sea entre NOW()+3h y NOW()+3h+1m
+
+      // Calcular ventana de tiempo en JS para evitar problemas de zona horaria en DB
+      const now = new Date();
+      const targetTime = new Date(now.getTime() + 3 * 60 * 60 * 1000); // +3 horas
+
+      // Formatear hora inicio ventana (HH:mm:00)
+      const startHour = targetTime.getHours().toString().padStart(2, '0');
+      const startMinute = targetTime.getMinutes().toString().padStart(2, '0');
+      const windowStart = `${startHour}:${startMinute}:00`;
+
+      // Formatear hora fin ventana (HH:mm:59) - ventana de 1 minuto
+      const windowEnd = `${startHour}:${startMinute}:59`;
+
+      console.log(`Checking for appointments between ${windowStart} and ${windowEnd}`);
+
       const [citas] = await pool.execute(
-        `SELECT 
-          c.id,
-          c.fecha,
-          c.hora,
-          c.estado,
-          pa.nombre_completo as patient,
-          pa.telefono,
-          pr.nombre_completo as doctor,
-          e.nombre as specialty
+        `SELECT c.id, c.fecha, c.hora, c.estado, 
+                pa.nombre_completo as patient, pa.telefono, 
+                pr.nombre_completo as doctor, e.nombre as specialty
          FROM citas c
-         INNER JOIN pacientes pa ON c.paciente_id = pa.id
-         INNER JOIN profesionales pr ON c.profesional_id = pr.id
-         INNER JOIN especialidades e ON pr.especialidad_id = e.id
+         JOIN pacientes pa ON c.paciente_id = pa.id
+         JOIN profesionales pr ON c.profesional_id = pr.id
+         JOIN especialidades e ON pr.especialidad_id = e.id
          WHERE c.estado = 'pendiente'
          AND c.fecha = CURDATE()
-         AND TIME(c.hora) BETWEEN ADDTIME(TIME(NOW()), '03:00:00')
-                              AND ADDTIME(TIME(NOW()), '03:01:00')
+         AND c.hora BETWEEN ? AND ?
          AND pa.telefono IS NOT NULL
          AND NOT EXISTS (
            SELECT 1 FROM confirmaciones conf
@@ -138,7 +143,8 @@ export function iniciarJobConfirmaciones3h() {
            AND conf.canal IN ('SMS', 'WhatsApp')
            AND DATE(conf.fecha_envio) = CURDATE()
            AND conf.estado_envio = 'entregado'
-         )`
+         )`,
+        [windowStart, windowEnd]
       );
 
       console.log(`Encontradas ${citas.length} citas para confirmación 3h`);
@@ -162,7 +168,7 @@ export function iniciarJobConfirmaciones3h() {
             }, 'SMS');
             canal = 'WhatsApp';
           }
-          
+
           await enviarConfirmacion3h({
             id: cita.id,
             fecha: cita.fecha.toISOString().split('T')[0],
@@ -173,9 +179,9 @@ export function iniciarJobConfirmaciones3h() {
             specialty: cita.specialty
           }, canal);
 
-          console.log(`Confirmación 3h enviada para cita ${cita.id}`);
+          console.log(`Confirmación 3h enviada para cita ${cita.id} `);
         } catch (error) {
-          console.error(`Error enviando confirmación 3h para cita ${cita.id}:`, error);
+          console.error(`Error enviando confirmación 3h para cita ${cita.id}: `, error);
         }
       }
     } catch (error) {
@@ -211,7 +217,7 @@ export function iniciarJobLimpiarOfertas() {
  */
 export async function notificarListaEsperaPorCitaCancelada(profesionalId, fecha, hora) {
   try {
-    console.log(`Notificando lista de espera por cita cancelada: profesional ${profesionalId}, ${fecha} ${hora}`);
+    console.log(`Notificando lista de espera por cita cancelada: profesional ${profesionalId}, ${fecha} ${hora} `);
     await notificarListaEspera(profesionalId, fecha, hora);
   } catch (error) {
     console.error('Error notificando lista de espera por cita cancelada:', error);
@@ -225,7 +231,7 @@ export async function notificarListaEsperaPorCitaCancelada(profesionalId, fecha,
 export function iniciarJobRecordatorios48h() {
   cron.schedule('0 * * * *', async () => {
     console.log('Ejecutando job de recordatorios 48h...');
-    
+
     try {
       // Verificar si el recordatorio 48h está habilitado
       const reminder48hEnabled = await obtenerConfiguracion('reminder_48h_enabled');
@@ -236,33 +242,33 @@ export function iniciarJobRecordatorios48h() {
 
       // Obtener canal preferido
       const canalPreferido = await obtenerConfiguracion('canal_preferido');
-      
+
       // Buscar citas que están en las próximas 48 horas (2 días)
       const [citas] = await pool.execute(
-        `SELECT 
-          c.id,
-          c.fecha,
-          c.hora,
-          c.estado,
-          pa.nombre_completo as patient,
-          pa.telefono,
-          pr.nombre_completo as doctor,
-          e.nombre as specialty
+        `SELECT
+  c.id,
+    c.fecha,
+    c.hora,
+    c.estado,
+    pa.nombre_completo as patient,
+    pa.telefono,
+    pr.nombre_completo as doctor,
+    e.nombre as specialty
          FROM citas c
          INNER JOIN pacientes pa ON c.paciente_id = pa.id
          INNER JOIN profesionales pr ON c.profesional_id = pr.id
          INNER JOIN especialidades e ON pr.especialidad_id = e.id
-         WHERE c.estado IN ('pendiente', 'confirmada')
+         WHERE c.estado IN('pendiente', 'confirmada')
          AND c.fecha = DATE_ADD(CURDATE(), INTERVAL 2 DAY)
          AND pa.telefono IS NOT NULL
-         AND NOT EXISTS (
-           SELECT 1 FROM confirmaciones conf
+         AND NOT EXISTS(
+      SELECT 1 FROM confirmaciones conf
            WHERE conf.cita_id = c.id
-           AND conf.canal IN ('SMS', 'WhatsApp')
+           AND conf.canal IN('SMS', 'WhatsApp')
            AND DATE(conf.fecha_envio) = CURDATE()
            AND conf.estado_envio = 'entregado'
            AND conf.respuesta = 'pendiente'
-         )`
+    )`
       );
 
       console.log(`Encontradas ${citas.length} citas para recordatorio 48h`);
@@ -286,7 +292,7 @@ export function iniciarJobRecordatorios48h() {
             }, 'SMS');
             canal = 'WhatsApp';
           }
-          
+
           await enviarRecordatorio24h({
             id: cita.id,
             fecha: cita.fecha.toISOString().split('T')[0],
@@ -297,9 +303,9 @@ export function iniciarJobRecordatorios48h() {
             specialty: cita.specialty
           }, canal);
 
-          console.log(`Recordatorio 48h enviado para cita ${cita.id}`);
+          console.log(`Recordatorio 48h enviado para cita ${cita.id} `);
         } catch (error) {
-          console.error(`Error enviando recordatorio 48h para cita ${cita.id}:`, error);
+          console.error(`Error enviando recordatorio 48h para cita ${cita.id}: `, error);
         }
       }
     } catch (error) {
