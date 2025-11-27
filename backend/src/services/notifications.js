@@ -3,7 +3,7 @@
  * Jobs programados para recordatorios y confirmaciones
  */
 import cron from 'node-cron';
-import { pool } from '../db.js';
+import { pool, executeWithPeru } from '../db.js';
 import { enviarRecordatorio24h, enviarConfirmacion3h } from './messaging.js';
 import { notificarListaEspera, limpiarOfertasExpiradas } from './waitingList.js';
 import { obtenerConfiguracion } from './configuraciones.js';
@@ -111,7 +111,7 @@ export function iniciarJobConfirmaciones3h() {
       // Obtener canal preferido
       const canalPreferido = await obtenerConfiguracion('canal_preferido');
 
-      // Calcular ventana de tiempo en JS para evitar problemas de zona horaria en DB
+      // Calcular ventana de tiempo para 3h antes
       const now = new Date();
       const targetTime = new Date(now.getTime() + 3 * 60 * 60 * 1000); // +3 horas
 
@@ -123,9 +123,10 @@ export function iniciarJobConfirmaciones3h() {
       // Formatear hora fin ventana (HH:mm:59) - ventana de 1 minuto
       const windowEnd = `${startHour}:${startMinute}:59`;
 
-      console.log(`Checking for appointments between ${windowStart} and ${windowEnd}`);
+      console.log(`Buscando citas para ${windowStart} - ${windowEnd} (fecha hoy según DB)`);
 
-      const [citas] = await pool.execute(
+      // Usar executeWithPeru para que CURDATE() funcione en timezone Peru
+      const [citas] = await executeWithPeru(
         `SELECT c.id, c.fecha, c.hora, c.estado, 
                 pa.nombre_completo as patient, pa.telefono, 
                 pr.nombre_completo as doctor, e.nombre as specialty
